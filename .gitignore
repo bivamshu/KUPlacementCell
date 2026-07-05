@@ -1,0 +1,4 @@
+frontend/node_modules/
+kupc-backend/node_modules/
+kupc-backend/dist/
+kupc-backend/.env
