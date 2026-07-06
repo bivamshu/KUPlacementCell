@@ -7,5 +7,12 @@ const env = process.env.NODE_ENV || 'development';
 
 export const config = {
   port,
-  env
+  env,
+  api: {
+    name: 'KUPC API',
+    version: '1.0.0'
+  },
+  cors: {
+    allowedOrigins: ['http://localhost:5173']
+  }
 };

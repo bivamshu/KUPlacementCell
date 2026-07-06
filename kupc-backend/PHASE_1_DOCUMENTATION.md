@@ -842,116 +842,910 @@ Use `422` when submitted data fails validation rules.
 Use `500` when the server hit an unexpected bug or infrastructure failure.
 
 # Step 14 — Create API Response Format
-Every **endpoint** should return
+*Status: Completed*
+
+Created:
+`src/utils/apiResponse.ts`
+
+Updated:
+`src/app.ts`
+`src/middleware/errorHandler.ts`
+
+#### What this step adds
+Every API response should follow one predictable shape:
+
+```json
 {
-    "success": true,
-    "data": {},
-    "message": "",
-    "error": null
+  "success": true,
+  "data": {},
+  "message": "",
+  "error": null
+}
+```
+
+The backend now has helper functions for success and error responses:
+
+```ts
+export function successResponse<T>(data: T, message = 'Success'): ApiResponse<T> {
+  return {
+    success: true,
+    data,
+    message,
+    error: null
+  };
 }
 
-Consistency matters.
+export function errorResponse(message: string, error: unknown = null): ApiResponse<null> {
+  return {
+    success: false,
+    data: null,
+    message,
+    error
+  };
+}
+```
+
+#### Sub-step: Understand `success`
+`success` is a simple boolean that tells the frontend whether the request succeeded.
+
+For successful requests:
+```json
+"success": true
+```
+
+For failed requests:
+```json
+"success": false
+```
+
+This lets the frontend make quick decisions without guessing from the message text.
+
+#### Sub-step: Understand `data`
+`data` contains the actual result of the request.
+
+KUPC examples:
+student profile data,
+company profile data,
+job listings,
+resume analysis result,
+application status,
+admin dashboard metrics.
+
+For errors, `data` should usually be `null` because the request did not produce the expected result.
+
+#### Sub-step: Understand `message`
+`message` gives a short human-readable explanation.
+
+Examples:
+`KUPC API is healthy`
+`Student profile fetched successfully`
+`Application already submitted`
+`Authentication required`
+
+The message is useful for frontend notifications, logs, and debugging.
+
+#### Sub-step: Understand `error`
+`error` is `null` when the request succeeds.
+
+For failed requests, `error` can contain structured debugging details:
+status code,
+validation errors,
+operational error flag,
+development stack trace.
+
+In production, avoid exposing sensitive internal details in `error`.
+
+#### Sub-step: Update existing endpoints
+The root endpoint now returns:
+
+```json
+{
+  "success": true,
+  "data": {
+    "name": "KUPC API"
+  },
+  "message": "Welcome to KUPC",
+  "error": null
+}
+```
+
+The health endpoint now returns:
+
+```json
+{
+  "success": true,
+  "data": {
+    "status": "OK",
+    "uptime": 123,
+    "timestamp": "2026-07-06T00:00:00.000Z"
+  },
+  "message": "KUPC API is healthy",
+  "error": null
+}
+```
+
+#### Why this matters for KUPC
+Consistency matters because the frontend will eventually call many endpoints:
+login,
+student profiles,
+company approvals,
+job posts,
+applications,
+matches,
+chat,
+analytics.
+
+If every endpoint returns a different shape, frontend code becomes messy and fragile. A shared API response format lets frontend developers build one reusable API client and handle loading, success, and error states predictably.
 
 # Step 15 — Install Helmet
-Learn
-What headers it adds
-Why
-Security
-Not just
-app.use(helmet())
+*Status: Completed*
 
-Know what it protects.
+Package:
+`helmet`
+
+Created:
+`src/middleware/security.ts`
+
+Updated:
+`src/app.ts`
+
+#### What this step adds
+Helmet is now registered as security middleware:
+
+```ts
+import helmet from 'helmet';
+
+export const securityMiddleware = helmet();
+```
+
+And in `app.ts`:
+
+```ts
+app.use(securityMiddleware);
+```
+
+Helmet sets several HTTP response headers that make common browser-based attacks harder.
+
+#### Sub-step: Understand why headers matter
+HTTP headers are metadata sent with requests and responses. Browsers use response headers to decide what behavior is allowed.
+
+Security headers can tell the browser:
+do not guess file types,
+do not expose referrer details unnecessarily,
+restrict risky browser features,
+reduce clickjacking risk,
+control cross-origin resource behavior.
+
+Helmet does not replace authentication, validation, or authorization. It is one security layer.
+
+#### Sub-step: Know what Helmet protects against
+Helmet helps reduce risk from several classes of attacks and misconfigurations.
+
+`X-Content-Type-Options`
+Prevents browsers from guessing a different content type than the one the server declared. This helps reduce MIME sniffing attacks.
+
+`Strict-Transport-Security`
+Tells browsers to prefer HTTPS for future requests. This is most useful in production over HTTPS.
+
+`X-Frame-Options` or frame-related policy
+Helps prevent clickjacking, where a malicious site embeds KUPC inside a hidden or misleading frame.
+
+`Referrer-Policy`
+Controls how much URL information the browser sends as the referrer when navigating away.
+
+`Content-Security-Policy`
+Restricts where scripts, images, styles, and other resources can load from. Helmet enables a default CSP that is safer than having none.
+
+`Cross-Origin-Opener-Policy` and related headers
+Help isolate browser contexts and reduce cross-origin attack surface.
+
+#### Sub-step: Understand "not just app.use(helmet())"
+Calling `app.use(helmet())` is the implementation, but the important learning is why it exists.
+
+Helmet is not magic security. It does not:
+validate user input,
+stop SQL injection by itself,
+manage user sessions,
+check roles,
+protect passwords,
+replace CORS.
+
+It hardens HTTP responses so browsers follow safer rules when interacting with the KUPC API.
+
+#### Why this matters for KUPC
+KUPC will handle sensitive placement workflows:
+student profile data,
+resume metadata,
+company accounts,
+admin actions,
+job applications.
+
+Security should be layered from the beginning. Helmet gives the backend a safer default posture before authentication and database work begin.
 
 # Step 16 — Configure CORS
-Understand
-Why browsers block requests.
-Allow
-localhost:5173
+*Status: Completed*
 
-Reject others.
-Learn
-Origins
-Credentials
-Methods
+Package:
+`cors`
+
+Created:
+`src/middleware/cors.ts`
+
+Updated:
+`src/config/config.ts`
+`src/app.ts`
+
+#### What this step adds
+The API now allows browser requests from:
+
+```text
+http://localhost:5173
+```
+
+That is the default Vite frontend development server origin.
+
+Other browser origins are rejected.
+
+Current config:
+
+```ts
+cors: {
+  allowedOrigins: ['http://localhost:5173']
+}
+```
+
+Current CORS middleware:
+
+```ts
+const corsOptions: CorsOptions = {
+  origin(origin, callback) {
+    if (!origin || config.cors.allowedOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new AppError(`CORS policy does not allow origin: ${origin}`, 403));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+```
+
+#### Sub-step: Understand why browsers block requests
+CORS means Cross-Origin Resource Sharing.
+
+Browsers enforce the same-origin policy. A frontend running on one origin is not automatically allowed to read responses from another origin.
+
+An origin is made of:
+protocol,
+host,
+port.
+
+These are different origins:
+`http://localhost:5173`
+`http://localhost:5000`
+`https://ku.edu.np`
+`http://127.0.0.1:5173`
+
+Even though `localhost:5173` and `localhost:5000` are both local, the ports are different, so the browser treats them as different origins.
+
+#### Sub-step: Allow the frontend origin
+During development, the KUPC frontend runs on Vite:
+
+```text
+http://localhost:5173
+```
+
+The backend runs on:
+
+```text
+http://localhost:5000
+```
+
+The backend must explicitly allow the frontend origin so the browser will let frontend code read API responses.
+
+#### Sub-step: Reject unknown origins
+Rejecting unknown browser origins helps prevent random websites from calling the KUPC API from a user's browser and reading responses.
+
+CORS is not full backend security. Tools like Postman, curl, or server-side scripts are not restricted by browser CORS rules. Authentication and authorization are still required later.
+
+But CORS is still important because KUPC's real users will mostly interact through browsers.
+
+#### Sub-step: Understand credentials
+`credentials: true` allows browsers to include credentials such as cookies or authorization-related data when the frontend is allowed.
+
+Later, if KUPC uses cookies for auth, this setting will matter. If KUPC uses only `Authorization: Bearer <token>` headers, the allowed headers setting also matters.
+
+Important: when credentials are enabled, the backend should not use wildcard origins like `*`.
+
+#### Sub-step: Understand methods
+The CORS config allows:
+
+`GET` for reading data.
+`POST` for creating data.
+`PUT` and `PATCH` for updating data.
+`DELETE` for deleting data.
+`OPTIONS` for browser preflight checks.
+
+A preflight request is the browser asking the backend, "Is this real request allowed?" before sending requests with certain methods or headers.
+
+#### Why this matters for KUPC
+The frontend and backend are separate apps. Without CORS, the React frontend may be running correctly and the backend may be running correctly, but the browser will still block API calls between them.
+
+Correct CORS setup is what lets the KUPC frontend safely talk to the KUPC backend during development.
 
 # Step 17 — Rate Limiting
-Install
-express-rate-limit
-Protect
-/auth
+*Status: Completed*
 
-/login
+Package:
+`express-rate-limit`
 
-/register
+Created:
+`src/middleware/rateLimiter.ts`
 
-Understand
-Brute force attacks.
+Updated:
+`src/app.ts`
+
+#### What this step adds
+The backend now has an authentication-focused rate limiter:
+
+```ts
+export const authRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json(
+      errorResponse('Too many authentication attempts. Please try again later.', {
+        statusCode: 429,
+        retryAfter: '15 minutes'
+      })
+    );
+  }
+});
+```
+
+It is applied to:
+
+```ts
+app.use(['/auth', '/login', '/register'], authRateLimiter);
+```
+
+There are no real authentication routes yet, but the protection is now in place for those future paths.
+
+#### Sub-step: Understand brute force attacks
+A brute force attack is when someone repeatedly tries many combinations until something works.
+
+For KUPC authentication, that could mean:
+trying many passwords for one student email,
+trying many email/password combinations,
+repeatedly hitting registration endpoints,
+trying to guess admin credentials.
+
+Even if every login attempt is technically valid HTTP, too many attempts in a short time is suspicious.
+
+#### Sub-step: Understand rate-limit window
+`windowMs` defines the time window.
+
+Current setting:
+
+```ts
+windowMs: 15 * 60 * 1000
+```
+
+That means 15 minutes.
+
+#### Sub-step: Understand request limit
+`limit` defines how many requests are allowed inside that window.
+
+Current setting:
+
+```ts
+limit: 10
+```
+
+That means a client can make 10 requests to protected auth paths within 15 minutes before receiving a `429 Too Many Requests` response.
+
+#### Sub-step: Understand standard headers
+`standardHeaders: true` sends modern rate-limit headers so clients can understand their limit state.
+
+These headers can communicate:
+the total request limit,
+remaining attempts,
+when the limit resets.
+
+This is useful for debugging and later frontend handling.
+
+#### Sub-step: Understand custom rate-limit response
+When the limit is exceeded, the backend returns the same API response format:
+
+```json
+{
+  "success": false,
+  "data": null,
+  "message": "Too many authentication attempts. Please try again later.",
+  "error": {
+    "statusCode": 429,
+    "retryAfter": "15 minutes"
+  }
+}
+```
+
+#### Why this matters for KUPC
+Authentication endpoints are high-risk because attackers often target them first.
+
+Rate limiting helps protect:
+student accounts,
+company recruiter accounts,
+admin accounts,
+server resources,
+database resources.
+
+It does not replace strong passwords, account lockout rules, MFA, or authentication monitoring. It is an early protective layer that slows abuse and makes attacks more expensive.
 
 # Step 18 — Validation
-Install
-npm install zod
+*Status: Completed*
 
-Don't use it yet.
-Just learn
-Schemas
-Parsing
-safeParse
-You'll need it in Phase 2.
+Installed:
+`zod`
+
+Command concept:
+```bash
+npm install zod
+```
+
+Note: in this workspace, `npm` was not available on the shell path, so the dependency was installed with the bundled package manager. The result is the same for the project code: `zod` is now listed in `package.json` and installed in `node_modules`.
+
+#### What this step adds
+Zod is a validation library. It lets the backend define the exact shape of incoming data before that data reaches controllers and services.
+
+We are not using Zod in routes yet. This step is about installing it and understanding the concepts before Phase 2.
+
+#### Sub-step: Understand schemas
+A schema is a description of what valid data looks like.
+
+Example for a future student registration request:
+
+```ts
+const registerStudentSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  password: z.string().min(8),
+  degree: z.string()
+});
+```
+
+This schema says:
+`name` must be a non-empty string,
+`email` must be a valid email,
+`password` must be at least 8 characters,
+`degree` must be a string.
+
+#### Sub-step: Understand parsing
+Parsing means taking unknown input and checking whether it matches a schema.
+
+With Zod:
+
+```ts
+const data = registerStudentSchema.parse(req.body);
+```
+
+If `req.body` is valid, Zod returns typed data. If it is invalid, Zod throws an error.
+
+That is useful, but throwing directly means the route must either catch the error or let the global error handler deal with it.
+
+#### Sub-step: Understand `safeParse`
+`safeParse` checks the data without throwing.
+
+Example:
+
+```ts
+const result = registerStudentSchema.safeParse(req.body);
+
+if (!result.success) {
+  // return validation error
+}
+
+const data = result.data;
+```
+
+`safeParse` returns an object with `success: true` or `success: false`. This makes it good for validation middleware because the middleware can decide exactly what JSON response to send.
+
+#### Sub-step: Why not use it yet
+The backend does not have real request bodies yet. There are no authentication, profile, job, or application endpoints to validate.
+
+Using Zod too early would create fake validation for fake routes. For now, it is installed and ready.
+
+#### Why this matters for KUPC
+KUPC will accept user input from students, companies, and admins:
+registration forms,
+login forms,
+profile updates,
+job posts,
+resume uploads,
+company approval decisions.
+
+Never trust raw request data. Validation protects the backend from malformed input and gives the frontend useful error messages before bad data reaches business logic or the database.
 
 # Step 19 — Create the App Entry
-Separate
-server.ts
+*Status: Completed*
 
-from
-app.ts
+Current files:
+`src/app.ts`
+`src/server.ts`
 
-Understand why.
-app.ts
-Creates Express.
-server.ts
-Starts Express.
-This separation makes testing much easier.
+#### What this step adds
+The project already separates Express app creation from server startup.
+
+`app.ts` creates and configures the Express app:
+middleware,
+routes,
+not-found handling,
+global error handling.
+
+`server.ts` starts the app by listening on a port:
+
+```ts
+app.listen(config.port, () => {
+  console.log(`KUPC Server is running in ${config.env} mode on http://localhost:${config.port}`);
+});
+```
+
+#### Sub-step: Understand `app.ts`
+`app.ts` should answer:
+What middleware does the API use?
+What routes exist?
+How are errors handled?
+
+It should not decide how the process is started.
+
+#### Sub-step: Understand `server.ts`
+`server.ts` should answer:
+Which port should the server listen on?
+When does the HTTP server start?
+What startup message should be logged?
+
+It should not contain route definitions or business logic.
+
+#### Sub-step: Why this makes testing easier
+Tests can import `app` directly without starting a real network server.
+
+Future example:
+
+```ts
+import app from '../src/app';
+```
+
+Then a test tool can call routes in memory. This is faster and cleaner than starting and stopping a port for every test.
+
+#### Why this matters for KUPC
+KUPC will eventually need automated tests for authentication, role permissions, job applications, company approval, and admin workflows.
+
+Keeping `app.ts` separate from `server.ts` makes those tests easier to write and keeps the backend architecture professional from the start.
 
 # Step 20 — Create Versioned APIs
-Instead of
+*Status: Completed*
+
+Created:
+`src/routes/index.ts`
+
+Updated:
+`src/app.ts`
+
+Current route mount:
+
+```ts
+app.use('/api/v1', apiV1Router);
+```
+
+#### What this step adds
+The backend now has a versioned API base route:
+
+```text
+GET /api/v1
+```
+
+Instead of building future routes like:
+
+```text
 /users
+/jobs
+/applications
+```
 
-Use
+KUPC should build them under:
+
+```text
 /api/v1/users
+/api/v1/jobs
+/api/v1/applications
+```
 
-Future-proof your API.
+#### Sub-step: Understand API versioning
+API versioning lets the backend evolve without breaking existing clients.
+
+If version 1 is already used by the frontend, mobile app, or external integrations, a future breaking change can be introduced under:
+
+```text
+/api/v2
+```
+
+That way, old clients can keep using `/api/v1` while new clients move to `/api/v2`.
+
+#### Sub-step: Understand route grouping
+The versioned router is created in `src/routes/index.ts`.
+
+Right now it only exposes the base route, but later it can mount route groups:
+
+```ts
+router.use('/students', studentRoutes);
+router.use('/companies', companyRoutes);
+router.use('/jobs', jobRoutes);
+router.use('/applications', applicationRoutes);
+```
+
+#### Why this matters for KUPC
+Placement systems change over time. KUPC may start with simple student and company records, then later add matching algorithms, resume analysis, interview scheduling, and admin workflows.
+
+Versioned APIs create room for growth without forcing every frontend change to happen at once.
 
 # Step 21 — Create Health Endpoint
+*Status: Completed*
+
+Endpoint:
+```text
 GET /health
+```
 
-Returns
+Current response uses the standard API response format:
+
+```json
 {
-    "status":"healthy",
-    "uptime":123,
-    "timestamp":"..."
+  "success": true,
+  "data": {
+    "status": "healthy",
+    "uptime": 123,
+    "timestamp": "2026-07-06T00:00:00.000Z"
+  },
+  "message": "KUPC API is healthy",
+  "error": null
 }
+```
 
-Very common in production.
+#### Sub-step: Understand `status`
+`status` tells whether the service is alive.
+
+Current value:
+
+```json
+"status": "healthy"
+```
+
+This means the Express process is running and able to respond.
+
+#### Sub-step: Understand `uptime`
+`uptime` is how long the Node process has been running, in seconds.
+
+Current code:
+
+```ts
+process.uptime()
+```
+
+This is useful during deployment because it can show whether the server recently restarted.
+
+#### Sub-step: Understand `timestamp`
+`timestamp` shows when the health response was generated.
+
+Current code:
+
+```ts
+new Date().toISOString()
+```
+
+This helps debugging because logs, Postman responses, and monitoring dashboards can be compared using the same time format.
+
+#### Why this matters for KUPC
+Health endpoints are common in production systems. Hosting platforms, load balancers, uptime monitors, and developers can call `/health` to check whether the API is alive.
+
+Later, this endpoint can also check database connectivity, Supabase availability, or other critical services.
 
 # Step 22 — Create Base Route
+*Status: Completed*
+
+Endpoint:
+```text
 GET /api/v1
+```
 
-Returns
+Current response uses the standard API response format:
+
+```json
 {
-    "name":"KUPC API",
-    "version":"1.0.0"
+  "success": true,
+  "data": {
+    "name": "KUPC API",
+    "version": "1.0.0"
+  },
+  "message": "KUPC API base route",
+  "error": null
 }
+```
 
+#### Sub-step: Understand the base route
+The base route confirms that the versioned API is mounted correctly.
+
+If `GET /health` works but `GET /api/v1` fails, the server is alive but the API router may be wired incorrectly.
+
+#### Sub-step: Understand `name`
+`name` identifies the API.
+
+Current value:
+
+```json
+"name": "KUPC API"
+```
+
+This is useful when debugging environments because it confirms which backend responded.
+
+#### Sub-step: Understand `version`
+`version` identifies the API version or application release.
+
+Current value:
+
+```json
+"version": "1.0.0"
+```
+
+The value is centralized in `config.api.version`.
+
+#### Why this matters for KUPC
+The base route gives developers a quick sanity check for the versioned API. It also creates the starting point for future routes like students, companies, jobs, applications, matches, and admin tools.
 
 # Step 23 — Test Everything
-Use Postman.
-Test
-GET /
-GET /health
-Wrong routes
-Error handling
-CORS
-Rate limiting
+*Status: Completed*
+
+Use Postman, Insomnia, Bruno, curl, or a browser for simple GET requests.
+
+#### Test 1: Root route
+Request:
+
+```text
+GET http://localhost:5000/
+```
+
+Expected:
+status `200`.
+
+Response should include:
+
+```json
+{
+  "success": true,
+  "data": {
+    "name": "KUPC API"
+  },
+  "message": "Welcome to KUPC",
+  "error": null
+}
+```
+
+#### Test 2: Health route
+Request:
+
+```text
+GET http://localhost:5000/health
+```
+
+Expected:
+status `200`.
+
+Response should include:
+`success: true`,
+`data.status: healthy`,
+`data.uptime`,
+`data.timestamp`.
+
+#### Test 3: Versioned API base route
+Request:
+
+```text
+GET http://localhost:5000/api/v1
+```
+
+Expected:
+status `200`.
+
+Response should include:
+`name: KUPC API`,
+`version: 1.0.0`.
+
+#### Test 4: Wrong route
+Request:
+
+```text
+GET http://localhost:5000/does-not-exist
+```
+
+Expected:
+status `404`.
+
+Response should use the standard error format:
+
+```json
+{
+  "success": false,
+  "data": null,
+  "message": "Route not found: GET /does-not-exist",
+  "error": {
+    "statusCode": 404
+  }
+}
+```
+
+#### Test 5: Error handling
+The wrong-route test already proves the error pipeline:
+
+Request
+goes to no matching route,
+`notFound` creates an `AppError`,
+`errorHandler` converts it into JSON.
+
+Later, controller errors will use the same path.
+
+#### Test 6: CORS
+In Postman, CORS will not behave exactly like a browser because CORS is a browser security rule.
+
+To test browser CORS, call the API from the frontend running at:
+
+```text
+http://localhost:5173
+```
+
+That origin should be allowed.
+
+A different browser origin should be rejected by the backend CORS configuration.
+
+#### Test 7: Rate limiting
+Protected paths:
+
+```text
+/auth
+/login
+/register
+```
+
+There are no real auth routes yet, but the limiter is already attached to those paths.
+
+Send more than 10 requests within 15 minutes to one of those paths:
+
+```text
+GET http://localhost:5000/login
+```
+
+Expected after the limit:
+status `429`.
+
+Response:
+
+```json
+{
+  "success": false,
+  "data": null,
+  "message": "Too many authentication attempts. Please try again later.",
+  "error": {
+    "statusCode": 429,
+    "retryAfter": "15 minutes"
+  }
+}
+```
+
+#### Why this matters for KUPC
+Testing the foundation before adding authentication or a database prevents confusion later.
+
+If routing, error handling, CORS, rate limiting, health checks, and response formats work now, Phase 2 can focus on authentication instead of debugging basic Express wiring.
 
 # Step 24 — Refactor
 Ask yourself
