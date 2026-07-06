@@ -1,165 +1,158 @@
-I actually think you should approach Phase 1 like a mini-course rather than "set up Express and move on." The goal isn't just to finish it—it's to understand why every piece exists. If you do that, building the rest of KUPC will be much easier.
-Below is the roadmap I would follow if I were mentoring you.
-
-Phase 1 Goal
-At the end of Phase 1, you should have:
-A professional Express + TypeScript backend
-A clean folder structure
-Environment variable management
-Logging
-Global error handling
-Validation
-Security middleware
-CORS
-Rate limiting
-One sample API (GET /health and GET /api/v1) proving everything works
-No authentication. No database. No Supabase yet.
-Think of this as building the house's foundation.
-
-Step 0 — Install Your Development Environment
-Install:
-Node.js (LTS)
-VS Code
-Git
-Postman (or Insomnia)
-Bruno (optional, a lightweight API client)
-Docker Desktop (optional for later)
-Verify:
-node -v
-npm -v
-git --version
 
 
-Step 1 — Learn How Express Works
-Before coding anything, understand:
-What is Express?
-What happens when a browser sends a request?
-What is HTTP?
-What is a request?
-What is a response?
-What is middleware?
-Understand this flow:
-Browser
+# Phase 1 Goal
+    At the end of Phase 1, you should have:
+    A professional Express + TypeScript backend
+    A clean folder structure
+    Environment variable management
+    Logging
+    Global error handling
+    Validation
+    Security middleware
+    CORS
+    Rate limiting
+    One sample API (GET /health and GET /api/v1) proving everything works
+    No authentication. No database. No Supabase yet.
+    Think of this as building the house's foundation.
 
-↓
+# Step 0 — Install Your Development Environment
+    Install:
+    Node.js (LTS)
+    VS Code
+    Git
+    Postman (or Insomnia)
+    Bruno (optional, a lightweight API client)
+    Docker Desktop (optional for later)
+    Verify:
+    node -v
+    npm -v
+    git --version
 
-HTTP Request
 
-↓
+# Step 1 — Learn How Express Works
+    Before coding anything, understand:
+    What is Express?
+    What happens when a browser sends a request?
+    What is HTTP?
+    What is a request?
+    What is a response?
+    What is middleware?
+    Understand this flow:
+    Browser
 
-Express Server
+    ↓
 
-↓
+    HTTP Request
 
-Middleware
+    ↓
 
-↓
+    Express Server
 
-Controller
+    ↓
 
-↓
+    Middleware
 
-Response
+    ↓
 
-↓
+    Controller
 
-Browser
+    ↓
 
-Don't write code yet.
+    Response
 
-Step 2 — Create the Project
-mkdir kupc-backend
+    ↓
 
-cd kupc-backend
+    Browser
 
-npm init -y
-	
-	PS C:\projects\KU-Placement-Cell\kupc-backend>npm init -y
-Wrote to C:\projects\KU-Placement-Cell\kupc-backend\package.json:
+# Step 2 — Create the Project
+    mkdir kupc-backend
 
-{
-  "name": "kupc-backend",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs"
-}
+    cd kupc-backend
+
+    npm init -y
+        
+    PS C:\projects\KU-Placement-Cell\kupc-backend>npm init -y
+    Wrote to C:\projects\KU-Placement-Cell\kupc-backend\package.json:
+
+    {
+    "name": "kupc-backend",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "type": "commonjs"
+    }
 
 
 
-Initialize Git
-git init
+    Initialize Git
+    git init
 
-Create
-.gitignore
+    Create
+    .gitignore
 
-Ignore
-node_modules
+    Ignore
+    node_modules
 
-dist
+    dist
 
-.env
+    .env
 
-Commit
-git add .
+    Commit
+    git add .
 
-git commit -m "Initial project"
+    git commit -m "Initial project"
 
-Status Complete 
-
-
-Step 3 — Install Dependencies
-Runtime
-npm install express dotenv cors helmet morgan express-rate-limit
-Development
-npm install -D typescript ts-node-dev @types/node @types/express @types/cors @types/morgan
-
-#### Q: What do the Runtime Packages do?
-* **`express`**: The core framework providing the HTTP server, routing engine, and middleware pipeline wrappers[cite: 1].
-* **`dotenv`**: A utility that loads environment variables from a hidden `.env` file into Node's runtime process (`process.env`), keeping credentials out of source control.
-* **`cors`**: Security middleware that configures Cross-Origin Resource Sharing rules, preventing untrusted frontends from accessing your API.
-* **`helmet`**: A security module that automatically sets various HTTP headers to harden the server against common exploits like Clickjacking and Cross-Site Scripting (XSS)[cite: 1].
-* **`morgan`**: A basic HTTP request logger middleware that outputs incoming request details (method, status code, response time) directly to the console.
-* **`express-rate-limit`**: Basic rate-limiting middleware that limits repeated requests to public endpoints to protect the system against brute-force attacks[cite: 1].
-
-#### Q: What do the Development Packages (-D) do?
-* **`typescript`**: The core TypeScript compiler engine that translates strict, type-safe code into raw browser/Node-readable JavaScript[cite: 1].
-* **`ts-node-dev`**: A development tool that runs your TypeScript code directly without manual compilation steps. It watches your files for updates and automatically restarts your server on every save.
-* **`@types/...`**: These are type definitions. Because raw packages like `express` or `morgan` were originally written in ordinary JavaScript, these types sit on top of them to give VS Code autocomplete features and compile-time validation errors if you write bad code[cite: 1].
-
-What does this do? 
-Let's break down exactly what these two installation commands do behind the scenes, using plain text.
-Command 1: The Runtime Packages
-Bash
-npm install express dotenv cors helmet morgan express-rate-limit
+    Status Complete 
 
 
-When you run this command, you are telling npm (Node Package Manager) to download code libraries that your application needs to live, breathe, and function while it is running in production.
-npm goes out to the public internet registry, downloads these 6 packages, and drops their code folders inside a giant folder called node_modules in your project.
-It automatically logs these package names and their precise version numbers inside your package.json file under a section named "dependencies".
-These packages become an active part of your final software. When your backend is running on a server and a user interacts with it, these modules are actively executing code to handle routing, secure HTTP headers, manage rate limits, and log incoming traffic.
-Command 2: The Development Packages (-D)
-Bash
-npm install -D typescript ts-node-dev @types/node @types/express @types/cors @types/morgan
+# Step 3 — Install Dependencies
+    Runtime
+    npm install express dotenv cors helmet morgan express-rate-limit
+
+    Development
+    npm install -D typescript ts-node-dev @types/node @types/express @types/cors @types/morgan
+
+    #### Q: What do the Runtime Packages do?
+    * **`express`**: The core framework providing the HTTP server, routing engine, and middleware pipeline wrappers[cite: 1].
+    * **`dotenv`**: A utility that loads environment variables from a hidden `.env` file into Node's runtime process (`process.env`), keeping credentials out of source control.
+    * **`cors`**: Security middleware that configures Cross-Origin Resource Sharing rules, preventing untrusted frontends from accessing your API.
+    * **`helmet`**: A security module that automatically sets various HTTP headers to harden the server against common exploits like Clickjacking and Cross-Site Scripting (XSS)[cite: 1].
+    * **`morgan`**: A basic HTTP request logger middleware that outputs incoming request details (method, status code, response time) directly to the console.
+    * **`express-rate-limit`**: Basic rate-limiting middleware that limits repeated requests to public endpoints to protect the system against brute-force attacks[cite: 1].
+
+    ## Q: What do the Development Packages (-D) do?
+    * **`typescript`**: The core TypeScript compiler engine that translates strict, type-safe code into raw browser/Node-readable JavaScript[cite: 1].
+    * **`ts-node-dev`**: A development tool that runs your TypeScript code directly without manual compilation steps. It watches your files for updates and automatically restarts your server on every save.
+    * **`@types/...`**: These are type definitions. Because raw packages like `express` or `morgan` were originally written in ordinary JavaScript, these types sit on top of them to give VS Code autocomplete features and compile-time validation errors if you write bad code[cite: 1].
+
+    ## What does this do? 
+    Let's break down exactly what these two installation commands do behind the scenes, using plain text.
+    Command 1: The Runtime Packages
+    Bash
+    npm install express dotenv cors helmet morgan express-rate-limit
 
 
-The key element here is the -D flag (which stands for Development Dependencies). This tells npm that you only need these tools while you are sitting at your computer actively writing, debugging, and compiling the code. They are completely stripped out when the application is built for production.
-npm downloads these tools into the same node_modules folder, but lists them separately inside your package.json under "devDependencies".
-The Tools: You need typescript to translate your strict TypeScript files into regular JavaScript that Node can actually read. You need ts-node-dev so you don't have to manually restart your server every time you hit Save.
-The @types/... Packages: Regular JavaScript packages don't natively understand TypeScript. These @types/ helper packages are like blueprints or translation dictionaries. They tell your code editor (VS Code) exactly what functions, arguments, and data types exist inside libraries like Express. This is what enables features like autocomplete (IntelliSense) and highlights red squiggly lines if you pass the wrong data type into a function.
-Ready for Step 4?
-Once these installations finish running in your terminal, the foundational packages will be fully locked into your workspace.
-Let me know when the terminal prompt clears, and we will jump into Step 4: Configuring TypeScript by running npx tsc --init!
+    When you run this command, you are telling npm (Node Package Manager) to download code libraries that your application needs to live, breathe, and function while it is running in production.
+    npm goes out to the public internet registry, downloads these 6 packages, and drops their code folders inside a giant folder called node_modules in your project.
+    It automatically logs these package names and their precise version numbers inside your package.json file under a section named "dependencies".
+    These packages become an active part of your final software. When your backend is running on a server and a user interacts with it, these modules are actively executing code to handle routing, secure HTTP headers, manage rate limits, and log incoming traffic.
+    Command 2: The Development Packages (-D)
+    Bash
+    npm install -D typescript ts-node-dev @types/node @types/express @types/cors @types/morgan
 
 
+    The key element here is the -D flag (which stands for Development Dependencies). This tells npm that you only need these tools while you are sitting at your computer actively writing, debugging, and compiling the code. They are completely stripped out when the application is built for production.
+    npm downloads these tools into the same node_modules folder, but lists them separately inside your package.json under "devDependencies".
+    The Tools: You need typescript to translate your strict TypeScript files into regular JavaScript that Node can actually read. You need ts-node-dev so you don't have to manually restart your server every time you hit Save.
+    The @types/... Packages: Regular JavaScript packages don't natively understand TypeScript. These @types/ helper packages are like blueprints or translation dictionaries. They tell your code editor (VS Code) exactly what functions, arguments, and data types exist inside libraries like Express. This is what enables features like autocomplete (IntelliSense) and highlights red squiggly lines if you pass the wrong data type into a function.
 
-Step 4 — Configure TypeScript
+# Step 4 — Configure TypeScript
 Initialize
 npx tsc --init
 
@@ -182,8 +175,6 @@ Instead of leaving the bloated file full of commented text, it was configured in
   },
   "include": ["src/**/*"]
 }
-
-
 
 ### ── STEP 4: TypeScript Configuration ──
 *Status: Completed*
@@ -224,7 +215,7 @@ strict
 moduleResolution
 sourceMap
 
-Step 5 — Create the Folder Structure
+# Step 5 — Create the Folder Structure
 
 Create
 src/
@@ -302,11 +293,24 @@ Database
 *   **`types/` (Type System Layer)**
     *   **Purpose:** Global custom TypeScript type definitions, structural contracts, interface models, and request space overrides.
 
----
-
 #### Q: Explain the flow pattern: Controller → Service → Database (and NOT Controller → Database)
 
-Step 6 — Learn Express Routing
+
+# ----- STEP 6: Express Routing Fundamentals -----
+*Status: Completed*
+* **Core Endpoints Operational:** Root ('GET /') and Health ('GET /health') implemented.
+* **Automation Configured:** Dev compilation hot-reloading active via 'ts-node-dev'.
+
+#### Q: Explain 'app.get()', 'req', and 'res' in your own words.
+* **'app.get(path, callback)'**
+    * **What it does:** This registers a specific **route handler** on the Express
+
+##  What is Routing? 
+    ** GET/ **
+    **health**
+    **requests**
+    **response**
+
 Create one route.
 GET /
 
@@ -330,7 +334,7 @@ req
 res
 
 
-Step 7 — Learn Express Middleware
+# Step 7 — Learn Express Middleware
 This is the most important topic.
 Create your own middleware.
 Example
@@ -353,52 +357,113 @@ next()
 
 Understand why middleware exists.
 
-Step 8 — Environment Variables
-Create
-.env
+# Step 8 — Environment Variables
+*Status: Completed*
 
-Add
+Created:
+`kupc-backend/.env`
+
+Added:
+```env
 PORT=5000
-
 NODE_ENV=development
+```
 
-Learn
-process.env
+#### Why this step is being done
+Environment variables keep runtime configuration outside the source code. Instead of hardcoding values like the port number directly inside `server.ts`, the app reads those values from the process environment.
 
-Never hardcode configuration.
+Node exposes environment values through `process.env`. The `dotenv` package loads values from `.env` into `process.env` during local development.
 
-Step 9 — Configuration Module
-Instead of
-process.env.PORT
+#### Why this matters for KUPC
+KUPC will eventually run in multiple environments:
+development on a laptop, testing/staging during review, and production on a real server. Each environment may need different values for ports, frontend URLs, database credentials, Supabase keys, email services, and secrets.
 
-everywhere
-Create
-config/
+Keeping those values in environment variables means the same codebase can run safely in all those places without editing source files. It also prevents sensitive values from being committed to Git. The root `.gitignore` already excludes `kupc-backend/.env`, which is correct.
 
-config.ts
+# Step 9 — Configuration Module
+*Status: Completed*
 
-Expose
-config.port
+Created:
+`src/config/config.ts`
 
-config.env
+Current config module:
+```ts
+import dotenv from 'dotenv';
 
-Understand
-Centralized configuration.
+dotenv.config();
 
-Step 10 — Logging
-Replace
-console.log()
+const port = Number(process.env.PORT) || 5000;
+const env = process.env.NODE_ENV || 'development';
 
-with
-Morgan (initially).
-Learn
-Request logging
-Status codes
-Response times
-Later
-Pino
+export const config = {
+  port,
+  env
+};
+```
 
-Step 11 — Global Error Handling
+Updated:
+`src/server.ts`
+
+The server now uses:
+```ts
+app.listen(config.port, () => {
+  console.log(`KUPC Server is running in ${config.env} mode on http://localhost:${config.port}`);
+});
+```
+
+#### Why this step is being done
+Reading `process.env.PORT` everywhere creates duplication and makes the project harder to maintain. A centralized config module gives the app one trusted place for environment values.
+
+The rest of the backend should import `config` instead of reading `process.env` directly.
+
+#### Why this matters for KUPC
+As KUPC grows, the backend will need configuration for CORS origins, Supabase credentials, JWT settings, upload limits, rate-limit rules, and email providers. Centralizing configuration keeps those decisions organized and prevents scattered environment access across controllers, services, and middleware.
+
+This also makes validation easier later. For example, the config module can eventually reject startup if a required secret is missing.
+
+# Step 10 — Logging
+*Status: Completed*
+
+Updated:
+`src/middleware/logger.ts`
+
+Current logger middleware:
+```ts
+import morgan from 'morgan';
+
+/**
+ * Logs each HTTP request with method, URL, status code, and response time.
+ */
+export const requestLogger = morgan('dev');
+```
+
+Updated:
+`src/app.ts`
+
+The app now registers the logger middleware:
+```ts
+app.use(requestLogger);
+```
+
+#### Why this step is being done
+`console.log()` is fine for a one-line startup message, but it is not enough for tracking incoming HTTP traffic. Morgan logs every request with useful details such as:
+method, path, status code, response size, and response time.
+
+Example development log:
+```text
+GET /health 200 3.421 ms - 15
+```
+
+#### Why this matters for KUPC
+When students, companies, and admins start using the platform, request logging helps answer basic debugging questions:
+Which route was called?
+Did it succeed or fail?
+What status code came back?
+How long did the request take?
+
+For now, Morgan gives simple request visibility during development. Later, KUPC can move to a structured logger like Pino for production logs, searchable log streams, request IDs, and better monitoring.
+
+# Step 11 — Global Error Handling
 Learn
 Normal errors
 vs
@@ -421,7 +486,7 @@ JSON Response
 
 Never crash the server.
 
-Step 12 — Create a Custom Error Class
+# Step 12 — Create a Custom Error Class
 Instead of
 throw new Error()
 
@@ -438,7 +503,7 @@ Student not found
 ↓
 404
 
-Step 13 — Learn Status Codes
+# Step 13 — Learn Status Codes
 Understand
 200
 201
@@ -452,8 +517,8 @@ Understand
 500
 Know when to use each.
 
-Step 14 — Create API Response Format
-Every endpoint should return
+# Step 14 — Create API Response Format
+Every **endpoint** should return
 {
     "success": true,
     "data": {},
@@ -463,7 +528,7 @@ Every endpoint should return
 
 Consistency matters.
 
-Step 15 — Install Helmet
+# Step 15 — Install Helmet
 Learn
 What headers it adds
 Why
@@ -473,7 +538,7 @@ app.use(helmet())
 
 Know what it protects.
 
-Step 16 — Configure CORS
+# Step 16 — Configure CORS
 Understand
 Why browsers block requests.
 Allow
@@ -485,7 +550,7 @@ Origins
 Credentials
 Methods
 
-Step 17 — Rate Limiting
+# Step 17 — Rate Limiting
 Install
 express-rate-limit
 Protect
@@ -498,7 +563,7 @@ Protect
 Understand
 Brute force attacks.
 
-Step 18 — Validation
+# Step 18 — Validation
 Install
 npm install zod
 
@@ -509,7 +574,7 @@ Parsing
 safeParse
 You'll need it in Phase 2.
 
-Step 19 — Create the App Entry
+# Step 19 — Create the App Entry
 Separate
 server.ts
 
@@ -523,7 +588,7 @@ server.ts
 Starts Express.
 This separation makes testing much easier.
 
-Step 20 — Create Versioned APIs
+# Step 20 — Create Versioned APIs
 Instead of
 /users
 
@@ -532,7 +597,7 @@ Use
 
 Future-proof your API.
 
-Step 21 — Create Health Endpoint
+# Step 21 — Create Health Endpoint
 GET /health
 
 Returns
@@ -544,7 +609,7 @@ Returns
 
 Very common in production.
 
-Step 22 — Create Base Route
+# Step 22 — Create Base Route
 GET /api/v1
 
 Returns
@@ -554,7 +619,7 @@ Returns
 }
 
 
-Step 23 — Test Everything
+# Step 23 — Test Everything
 Use Postman.
 Test
 GET /
@@ -564,7 +629,7 @@ Error handling
 CORS
 Rate limiting
 
-Step 24 — Refactor
+# Step 24 — Refactor
 Ask yourself
 Can I remove duplicate code?
 Can I improve naming?
@@ -572,7 +637,7 @@ Can I improve folders?
 Can I simplify?
 Professional developers refactor constantly.
 
-Step 25 — Final Project Structure
+# Step 25 — Final Project Structure
 By the end, your project should look like this:
 kupc-backend/
 ├── src/
