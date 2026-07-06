@@ -464,58 +464,382 @@ How long did the request take?
 For now, Morgan gives simple request visibility during development. Later, KUPC can move to a structured logger like Pino for production logs, searchable log streams, request IDs, and better monitoring.
 
 # Step 11 — Global Error Handling
-Learn
-Normal errors
-vs
-Express errors
-Create
-middleware/
+*Status: Completed*
 
-errorHandler.ts
+Created:
+`src/middleware/errorHandler.ts`
 
-Understand
-Throw Error
+Also created:
+`src/middleware/notFound.ts`
 
-↓
+Updated:
+`src/app.ts`
 
-Error Middleware
+#### What this step adds
+The backend now has one central middleware responsible for converting thrown errors into JSON responses:
 
-↓
+```ts
+export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
+  const isKnownError = err instanceof AppError;
+  const statusCode = isKnownError ? err.statusCode : 500;
+  const message = isKnownError ? err.message : 'Internal server error';
 
-JSON Response
+  res.status(statusCode).json({
+    success: false,
+    data: null,
+    message,
+    error: {
+      statusCode,
+      isOperational: isKnownError ? err.isOperational : false,
+      stack: config.env === 'development' ? err.stack : undefined
+    }
+  });
+};
+```
 
-Never crash the server.
+The app registers the error-related middleware after the normal routes:
+
+```ts
+app.use(notFound);
+app.use(errorHandler);
+```
+
+This order matters. Express checks middleware and routes from top to bottom. Normal routes should get the first chance to respond. If no route matches, `notFound` creates a 404 error. If any route or middleware throws/passes an error, `errorHandler` sends the final JSON response.
+
+#### Sub-step: Understand normal errors
+A normal JavaScript error is created with:
+
+```ts
+throw new Error('Something went wrong');
+```
+
+This kind of error has a message and stack trace, but it does not naturally know which HTTP status code should be sent. If the backend only throws normal errors, every failure tends to become a generic 500 response.
+
+That is not enough for an API. A missing student should be a 404. A duplicate email should be a 409. Invalid input should be a 400 or 422.
+
+#### Sub-step: Understand Express errors
+Express has a special error flow. When an error is passed to `next(error)`, Express skips normal route handlers and jumps to error-handling middleware.
+
+An Express error middleware has four parameters:
+
+```ts
+(err, req, res, next) => {}
+```
+
+That first `err` parameter is what makes it an error middleware. Without four parameters, Express treats it like normal middleware.
+
+#### Sub-step: Convert errors into JSON
+KUPC is an API backend. That means errors should be returned as JSON, not as random HTML pages or crashed terminal output.
+
+The current error response shape is:
+
+```json
+{
+  "success": false,
+  "data": null,
+  "message": "Route not found: GET /missing-route",
+  "error": {
+    "statusCode": 404,
+    "isOperational": true
+  }
+}
+```
+
+In development, the response also includes a stack trace. In production, stack traces should be hidden because they can reveal internal file paths and implementation details.
+
+#### Sub-step: Never crash the server for expected failures
+Expected failures are normal in real applications:
+wrong route, invalid form, missing profile, expired token, unverified company, duplicate job application.
+
+Those should not crash the server. They should become clean HTTP responses. The server should only crash for truly unsafe startup or infrastructure problems, such as a missing required production secret or database connection failure during boot.
+
+#### Why this matters for KUPC
+KUPC will have students, companies, and admins using many workflows. Without global error handling, every controller would need to repeat its own `try/catch` response logic. That creates inconsistent error formats and makes bugs harder to debug.
+
+With one global error handler:
+all API errors look consistent,
+controllers stay cleaner,
+frontend developers can handle errors predictably,
+and future logs/monitoring can capture failures from one place.
 
 # Step 12 — Create a Custom Error Class
-Instead of
-throw new Error()
+*Status: Completed*
 
-Create
-AppError
+Created:
+`src/utils/AppError.ts`
 
-Support
-message
-status code
-operational error
-Example
-Student not found
+Current class:
+```ts
+export class AppError extends Error {
+  statusCode: number;
+  isOperational: boolean;
 
-↓
-404
+  constructor(message: string, statusCode: number, isOperational = true) {
+    super(message);
+
+    this.statusCode = statusCode;
+    this.isOperational = isOperational;
+
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+```
+
+#### What this step adds
+`AppError` is a custom error class for errors that the application intentionally creates and understands.
+
+Instead of this:
+
+```ts
+throw new Error('Student not found');
+```
+
+Use this:
+
+```ts
+throw new AppError('Student not found', 404);
+```
+
+Now the error carries both the message and the correct HTTP status code.
+
+#### Sub-step: Support message
+The message explains what went wrong in human-readable form.
+
+Examples:
+`Student not found`
+`Company is not verified`
+`Email already exists`
+`Resume file is required`
+
+The message is what the frontend can show to the user, as long as it is safe and clear.
+
+#### Sub-step: Support status code
+The status code tells the client what kind of failure happened.
+
+Examples:
+`404` means the requested record was not found.
+`403` means the user is known but not allowed.
+`409` means the request conflicts with existing data.
+
+Without this field, the error handler cannot know whether a failure should be 400, 404, 409, or 500.
+
+#### Sub-step: Support operational error
+`isOperational` tells the backend whether the error is expected and safe to return.
+
+Operational errors are normal application failures:
+student not found,
+invalid login,
+company account pending approval,
+duplicate application,
+bad request body.
+
+Non-operational errors are unexpected bugs or system failures:
+undefined variable,
+broken code path,
+failed assumption inside business logic,
+unexpected library failure.
+
+This distinction becomes important later for logging, alerting, and deciding whether a process should restart.
+
+#### Sub-step: Preserve the stack trace
+`Error.captureStackTrace(this, this.constructor)` keeps the stack trace useful by pointing at where the `AppError` was created.
+
+That helps during development because the terminal and development JSON response can show the exact file and line where the problem started.
+
+#### Why this matters for KUPC
+KUPC will have domain-specific errors everywhere:
+student profile missing,
+resume not uploaded,
+company not approved,
+job post closed,
+application already submitted,
+admin permission required.
+
+`AppError` gives all of those cases one shared structure. That keeps controllers and services expressive without scattering response formatting logic across the backend.
 
 # Step 13 — Learn Status Codes
-Understand
-200
-201
-204
-400
-401
-403
-404
-409
-422
-500
-Know when to use each.
+*Status: Completed*
+
+Status codes are how the backend tells the client the result of a request. The JSON body explains details, but the status code gives the official HTTP meaning.
+
+#### 200 — OK
+Use `200` when a request succeeded and the server is returning data.
+
+KUPC examples:
+fetching the student dashboard,
+loading a company profile,
+getting a list of jobs,
+checking `/health`.
+
+Example:
+```ts
+res.status(200).json({ success: true, data: jobs });
+```
+
+#### 201 — Created
+Use `201` when the request successfully created a new resource.
+
+KUPC examples:
+creating a student profile,
+posting a new job,
+submitting an application,
+creating a company account request.
+
+Example:
+```ts
+res.status(201).json({ success: true, data: newJob });
+```
+
+#### 204 — No Content
+Use `204` when the request succeeded but there is no response body to send back.
+
+KUPC examples:
+deleting a saved job,
+removing a notification,
+revoking a token,
+clearing a draft.
+
+Important: a `204` response should not include JSON data. It means success with an empty body.
+
+Example:
+```ts
+res.status(204).send();
+```
+
+#### 400 — Bad Request
+Use `400` when the request itself is malformed or missing basic required information.
+
+KUPC examples:
+missing email field,
+invalid JSON body,
+missing job title,
+invalid query parameter format.
+
+This means the client sent something the server could not understand or process at the basic request level.
+
+Example:
+```ts
+throw new AppError('Email is required', 400);
+```
+
+#### 401 — Unauthorized
+Use `401` when the user is not authenticated.
+
+KUPC examples:
+request has no access token,
+token is expired,
+token is invalid,
+student tries to access profile data without signing in.
+
+The word "Unauthorized" is a little confusing. In HTTP, `401` really means "not logged in or not authenticated correctly."
+
+Example:
+```ts
+throw new AppError('Authentication required', 401);
+```
+
+#### 403 — Forbidden
+Use `403` when the user is authenticated but not allowed to perform the action.
+
+KUPC examples:
+student tries to approve a company,
+company tries to access admin analytics,
+unverified company tries to post a job,
+one student tries to edit another student's profile.
+
+Difference from `401`:
+`401` means "we do not know who you are."
+`403` means "we know who you are, but you cannot do this."
+
+Example:
+```ts
+throw new AppError('Admin access required', 403);
+```
+
+#### 404 — Not Found
+Use `404` when the requested route or resource does not exist.
+
+KUPC examples:
+student ID does not exist,
+job post was deleted,
+company profile cannot be found,
+client calls `/api/v1/unknown`.
+
+The new `notFound` middleware uses this status for unmatched routes.
+
+Example:
+```ts
+throw new AppError('Student not found', 404);
+```
+
+#### 409 — Conflict
+Use `409` when the request is valid, but it conflicts with something that already exists or with the current state of the system.
+
+KUPC examples:
+student applies to the same job twice,
+email is already registered,
+company tries to create a duplicate active job post,
+admin tries to approve a company that has already been rejected.
+
+Example:
+```ts
+throw new AppError('Application already submitted', 409);
+```
+
+#### 422 — Unprocessable Entity
+Use `422` when the request is shaped correctly, but the data fails deeper validation rules.
+
+KUPC examples:
+resume file type is unsupported,
+GPA is outside the allowed range,
+job deadline is in the past,
+password is too weak,
+LinkedIn URL format is invalid.
+
+Difference from `400`:
+`400` is for malformed or missing request basics.
+`422` is for valid request structure with unacceptable business data.
+
+Example:
+```ts
+throw new AppError('Application deadline cannot be in the past', 422);
+```
+
+#### 500 — Internal Server Error
+Use `500` when something unexpected went wrong on the server.
+
+KUPC examples:
+unexpected database failure,
+unhandled code bug,
+third-party service failure,
+undefined runtime error.
+
+The client usually cannot fix a `500`. The backend team must inspect logs and fix the cause.
+
+Example:
+```ts
+throw new Error('Unexpected database adapter failure');
+```
+
+The global error handler converts unknown errors into:
+```json
+{
+  "success": false,
+  "message": "Internal server error"
+}
+```
+
+#### Quick status code decision guide
+Use `200` when data was fetched or an action succeeded with a response body.
+Use `201` when something new was created.
+Use `204` when something succeeded and no body is needed.
+Use `400` when the request is malformed or missing required basics.
+Use `401` when the user is not authenticated.
+Use `403` when the authenticated user is not allowed.
+Use `404` when a route or resource does not exist.
+Use `409` when the request conflicts with existing state.
+Use `422` when submitted data fails validation rules.
+Use `500` when the server hit an unexpected bug or infrastructure failure.
 
 # Step 14 — Create API Response Format
 Every **endpoint** should return

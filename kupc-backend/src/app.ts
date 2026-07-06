@@ -1,5 +1,7 @@
 import express, { Request, Response } from 'express';
+import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/logger';
+import { notFound } from './middleware/notFound';
 
 const app = express();
 
@@ -20,5 +22,11 @@ app.get('/health', (req: Request, res: Response) => {
     status: 'OK'
   });
 });
+
+// Convert unmatched routes into a controlled 404 error
+app.use(notFound);
+
+// Global error middleware must be registered after all routes
+app.use(errorHandler);
 
 export default app;
