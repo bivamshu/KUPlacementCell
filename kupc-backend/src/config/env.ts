@@ -15,7 +15,8 @@ const envSchema = z.object({
   OTP_LENGTH: z.coerce.number().int().positive().default(6),
   OTP_EXPIRES_IN: z.string().min(1).default('10m'),
   OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
-  KU_EMAIL_DOMAIN: z.string().min(1).default('ku.edu.np')
+  KU_EMAIL_DOMAIN: z.string().min(1).default('ku.edu.np'),
+  ADMIN_PASSWORD_LOGIN_ENABLED: z.coerce.boolean().default(false)
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

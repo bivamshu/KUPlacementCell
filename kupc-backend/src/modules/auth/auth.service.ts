@@ -1,5 +1,7 @@
 import { env } from '../../config/env';
-import { supabaseAdmin } from '../../config/supabase';
+import { supabaseAdmin, supabaseAnon } from '../../config/supabase';
+import { companiesRepository } from '../../database/companies.repository';
+import { companyRequestsRepository } from '../../database/companyRequests.repository';
 import { refreshTokensRepository } from '../../database/refreshTokens.repository';
 import { sessionsRepository } from '../../database/sessions.repository';
 import { studentsRepository } from '../../database/students.repository';
@@ -9,7 +11,14 @@ import { addSeconds, generateNumericOtp, generateSecureToken, hashToken, parseDu
 import { AppError } from '../../utils/AppError';
 import { signAccessToken } from '../../utils/jwt';
 import { AUTH_ERROR_CODES, Role } from './auth.constants';
-import { RegisterStudentInput, VerifyOtpInput } from './auth.validation';
+import {
+  AdminLoginInput,
+  CompanyVerificationDocumentInput,
+  LoginInput,
+  RegisterCompanyInput,
+  RegisterStudentInput,
+  VerifyOtpInput
+} from './auth.validation';
 
 type RequestContext = {
   ipAddress?: string;
@@ -30,6 +39,66 @@ function getOtpExpiresInSeconds(): number {
 
 function getRefreshExpiresInSeconds(): number {
   return parseDurationToSeconds(env.REFRESH_EXPIRES_IN);
+}
+
+async function issueTokenPair(
+  user: {
+    id: string;
+    email: string;
+    role: Role;
+    email_verified: boolean;
+    status: string;
+  },
+  context: RequestContext
+): Promise<{
+  access_token: string;
+  refresh_token: string;
+  user: {
+    id: string;
+    email: string;
+    role: Role;
+    email_verified: boolean;
+    status: string;
+    verification_status?: string;
+  };
+}> {
+  const refreshExpiresAt = addSeconds(new Date(), getRefreshExpiresInSeconds());
+  const session = await sessionsRepository.create({
+    userId: user.id,
+    deviceInfo: context.deviceInfo,
+    ipAddress: context.ipAddress,
+    expiresAt: refreshExpiresAt
+  });
+
+  const refreshToken = generateSecureToken();
+  await refreshTokensRepository.create({
+    userId: user.id,
+    sessionId: session.id,
+    tokenHash: hashToken(refreshToken),
+    expiresAt: refreshExpiresAt
+  });
+
+  const accessToken = signAccessToken({
+    sub: user.id,
+    role: user.role,
+    email: user.email,
+    sessionId: session.id
+  });
+
+  const company = user.role === Role.COMPANY ? await companiesRepository.findByUserId(user.id) : null;
+
+  return {
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    user: {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      email_verified: user.email_verified,
+      status: user.status,
+      verification_status: company?.verification_status
+    }
+  };
 }
 
 async function deliverStudentOtp(email: string, otp: string): Promise<void> {
@@ -144,39 +213,120 @@ export const authService = {
     const verifiedUser = await usersRepository.markEmailVerified(user.id);
     await studentOtpsRepository.consume(otpRecord.id);
 
-    const refreshExpiresAt = addSeconds(new Date(), getRefreshExpiresInSeconds());
-    const session = await sessionsRepository.create({
-      userId: verifiedUser.id,
-      deviceInfo: context.deviceInfo,
-      ipAddress: context.ipAddress,
-      expiresAt: refreshExpiresAt
+    return issueTokenPair(verifiedUser, context);
+  },
+
+  async registerCompany(input: RegisterCompanyInput): Promise<{ company_id: string; verification_status: 'pending' | 'approved' | 'rejected' }> {
+    const email = normalizeEmail(input.email);
+    const existingUser = await usersRepository.findByEmail(email);
+
+    if (existingUser) {
+      throw new AppError('Email is already registered', 409, AUTH_ERROR_CODES.EMAIL_ALREADY_REGISTERED);
+    }
+
+    const { data: authData, error: authError } = await supabaseAnon.auth.signUp({
+      email,
+      password: input.password,
+      options: {
+        data: {
+          company_name: input.company_name,
+          role: Role.COMPANY
+        }
+      }
     });
 
-    const refreshToken = generateSecureToken();
-    await refreshTokensRepository.create({
-      userId: verifiedUser.id,
-      sessionId: session.id,
-      tokenHash: hashToken(refreshToken),
-      expiresAt: refreshExpiresAt
-    });
+    if (authError || !authData.user) {
+      throw mapRegistrationError(authError);
+    }
 
-    const accessToken = signAccessToken({
-      sub: verifiedUser.id,
-      role: verifiedUser.role,
-      email: verifiedUser.email,
-      sessionId: session.id
+    try {
+      await usersRepository.createCompanyUser({
+        id: authData.user.id,
+        email,
+        emailVerified: Boolean(authData.user.email_confirmed_at)
+      });
+
+      const company = await companiesRepository.create({
+        id: authData.user.id,
+        companyName: input.company_name,
+        website: input.website
+      });
+
+      return {
+        company_id: company.id,
+        verification_status: company.verification_status
+      };
+    } catch (error) {
+      await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+      throw mapRegistrationError(error);
+    }
+  },
+
+  async createCompanyVerificationDocument(
+    userId: string,
+    input: CompanyVerificationDocumentInput
+  ): Promise<{ request_id: string; status: 'pending' | 'approved' | 'rejected' }> {
+    const company = await companiesRepository.findByUserId(userId);
+
+    if (!company) {
+      throw new AppError('Company account required', 403, AUTH_ERROR_CODES.INSUFFICIENT_ROLE);
+    }
+
+    const request = await companyRequestsRepository.create({
+      companyId: company.id,
+      documentType: input.document_type,
+      fileUrl: input.file_url
     });
 
     return {
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      user: {
-        id: verifiedUser.id,
-        email: verifiedUser.email,
-        role: verifiedUser.role,
-        email_verified: verifiedUser.email_verified,
-        status: verifiedUser.status
-      }
+      request_id: request.id,
+      status: request.status
     };
+  },
+
+  async login(input: LoginInput, context: RequestContext): Promise<Awaited<ReturnType<typeof issueTokenPair>>> {
+    const email = normalizeEmail(input.email);
+    const { error } = await supabaseAnon.auth.signInWithPassword({
+      email,
+      password: input.password
+    });
+
+    if (error) {
+      throw new AppError('Invalid credentials', 401, AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+    }
+
+    const user = await usersRepository.findByEmail(email);
+
+    if (!user) {
+      throw new AppError('Invalid credentials', 401, AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+    }
+
+    if (user.status !== 'active') {
+      throw new AppError('Account is suspended', 403, AUTH_ERROR_CODES.ACCOUNT_SUSPENDED);
+    }
+
+    if (user.role === Role.STUDENT && !user.email_verified) {
+      throw new AppError('Account is not verified', 403, AUTH_ERROR_CODES.ACCOUNT_NOT_VERIFIED);
+    }
+
+    return issueTokenPair(user, context);
+  },
+
+  async adminLogin(input: AdminLoginInput, context: RequestContext): Promise<Awaited<ReturnType<typeof issueTokenPair>>> {
+    if (!input.totp_code && !env.ADMIN_PASSWORD_LOGIN_ENABLED) {
+      throw new AppError('Admin TOTP is required', 501, 'ADMIN_TOTP_NOT_CONFIGURED');
+    }
+
+    if (input.totp_code) {
+      throw new AppError('Admin TOTP verification is not implemented yet', 501, 'ADMIN_TOTP_NOT_CONFIGURED');
+    }
+
+    const result = await this.login(input, context);
+
+    if (result.user.role !== Role.ADMIN) {
+      throw new AppError('Invalid credentials', 401, AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+    }
+
+    return result;
   }
 };

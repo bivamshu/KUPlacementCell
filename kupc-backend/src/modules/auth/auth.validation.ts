@@ -40,6 +40,15 @@ export const registerCompanySchema = z.object({
     .strip()
 });
 
+export const companyVerificationDocumentSchema = z.object({
+  body: z
+    .object({
+      document_type: z.string().min(2).max(100),
+      file_url: z.string().url().or(z.literal(''))
+    })
+    .strip()
+});
+
 export const verifyOtpSchema = z.object({
   body: z
     .object({
@@ -49,5 +58,28 @@ export const verifyOtpSchema = z.object({
     .strip()
 });
 
+export const loginSchema = z.object({
+  body: z
+    .object({
+      email: z.string().email(),
+      password: z.string().min(1)
+    })
+    .strip()
+});
+
+export const adminLoginSchema = z.object({
+  body: z
+    .object({
+      email: z.string().email(),
+      password: z.string().min(1),
+      totp_code: z.string().regex(/^\d{6}$/).optional()
+    })
+    .strip()
+});
+
 export type RegisterStudentInput = z.infer<typeof registerStudentSchema>['body'];
+export type RegisterCompanyInput = z.infer<typeof registerCompanySchema>['body'];
+export type CompanyVerificationDocumentInput = z.infer<typeof companyVerificationDocumentSchema>['body'];
 export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>['body'];
+export type LoginInput = z.infer<typeof loginSchema>['body'];
+export type AdminLoginInput = z.infer<typeof adminLoginSchema>['body'];

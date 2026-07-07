@@ -11,6 +11,16 @@ export type UserRecord = {
 };
 
 export const usersRepository = {
+  async findById(id: string): Promise<UserRecord | null> {
+    const { data, error } = await supabaseAdmin.from('users').select('*').eq('id', id).maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    return data;
+  },
+
   async findByEmail(email: string): Promise<UserRecord | null> {
     const { data, error } = await supabaseAdmin.from('users').select('*').eq('email', email).maybeSingle();
 
@@ -29,6 +39,26 @@ export const usersRepository = {
         email: input.email,
         role: Role.STUDENT,
         email_verified: false,
+        status: 'active'
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return data;
+  },
+
+  async createCompanyUser(input: { id: string; email: string; emailVerified?: boolean }): Promise<UserRecord> {
+    const { data, error } = await supabaseAdmin
+      .from('users')
+      .insert({
+        id: input.id,
+        email: input.email,
+        role: Role.COMPANY,
+        email_verified: input.emailVerified ?? false,
         status: 'active'
       })
       .select()

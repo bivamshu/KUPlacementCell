@@ -13,7 +13,8 @@ export const config = {
     otpLength: env.OTP_LENGTH,
     otpExpiresIn: env.OTP_EXPIRES_IN,
     otpMaxAttempts: env.OTP_MAX_ATTEMPTS,
-    kuEmailDomain: env.KU_EMAIL_DOMAIN
+    kuEmailDomain: env.KU_EMAIL_DOMAIN,
+    adminPasswordLoginEnabled: env.ADMIN_PASSWORD_LOGIN_ENABLED
   },
   cors: {
     allowedOrigins: ['http://localhost:5173']
