@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { config } from '../config/config';
+import { authRateLimiter } from '../middleware/rateLimiter';
+import { authRouter } from '../modules/auth';
 import { successResponse } from '../utils/apiResponse';
 
 const router = Router();
@@ -15,5 +17,7 @@ router.get('/', (req, res) => {
     )
   );
 });
+
+router.use('/auth', authRateLimiter, authRouter);
 
 export default router;

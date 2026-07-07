@@ -3,7 +3,6 @@ import { corsMiddleware } from './middleware/cors';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/logger';
 import { notFound } from './middleware/notFound';
-import { authRateLimiter } from './middleware/rateLimiter';
 import { securityMiddleware } from './middleware/security';
 import apiV1Router from './routes';
 import { successResponse } from './utils/apiResponse';
@@ -21,9 +20,6 @@ app.use(express.json());
 
 // Log incoming requests during development and API testing
 app.use(requestLogger);
-
-// Slow down repeated authentication attempts
-app.use(['/auth', '/login', '/register'], authRateLimiter);
 
 // 1. Root Route
 app.get('/', (req: Request, res: Response) => {

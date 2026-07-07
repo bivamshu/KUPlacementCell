@@ -1,16 +1,19 @@
-import dotenv from 'dotenv';
-
-dotenv.config();
-
-const port = Number(process.env.PORT) || 5000;
-const env = process.env.NODE_ENV || 'development';
+import { env } from './env';
 
 export const config = {
-  port,
-  env,
+  port: env.PORT,
+  env: env.NODE_ENV,
   api: {
     name: 'KUPC API',
     version: '1.0.0'
+  },
+  auth: {
+    jwtExpiresIn: env.JWT_EXPIRES_IN,
+    refreshExpiresIn: env.REFRESH_EXPIRES_IN,
+    otpLength: env.OTP_LENGTH,
+    otpExpiresIn: env.OTP_EXPIRES_IN,
+    otpMaxAttempts: env.OTP_MAX_ATTEMPTS,
+    kuEmailDomain: env.KU_EMAIL_DOMAIN
   },
   cors: {
     allowedOrigins: ['http://localhost:5173']
