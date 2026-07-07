@@ -9,9 +9,15 @@ const passwordSchema = z
 const kuEmailSchema = z
   .string()
   .email()
-  .refine((email) => email.toLowerCase().endsWith(`.${env.KU_EMAIL_DOMAIN}`) || email.toLowerCase().endsWith(`@${env.KU_EMAIL_DOMAIN}`), {
-    message: 'Email must use the KU institutional domain'
-  });
+  .refine(
+    (email) => {
+      const domain = email.toLowerCase().split('@')[1] ?? '';
+      return domain === env.KU_EMAIL_DOMAIN || domain.endsWith(`.${env.KU_EMAIL_DOMAIN}`);
+    },
+    {
+      message: 'Email must use the KU institutional domain'
+    }
+  );
 
 export const registerStudentSchema = z.object({
   body: z
@@ -38,7 +44,10 @@ export const verifyOtpSchema = z.object({
   body: z
     .object({
       email: z.string().email(),
-      otp: z.string().regex(/^\d{6}$/)
+      otp: z.string().regex(new RegExp(`^\\d{${env.OTP_LENGTH}}$`))
     })
     .strip()
 });
+
+export type RegisterStudentInput = z.infer<typeof registerStudentSchema>['body'];
+export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>['body'];

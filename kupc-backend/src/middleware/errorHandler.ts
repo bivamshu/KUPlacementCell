@@ -10,6 +10,7 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, next) => {
 
   res.status(statusCode).json(
     errorResponse(message, {
+      code: isKnownError ? err.code : 'INTERNAL_SERVER_ERROR',
       statusCode,
       isOperational: isKnownError ? err.isOperational : false,
       stack: config.env === 'development' ? err.stack : undefined

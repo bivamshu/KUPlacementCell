@@ -486,7 +486,394 @@ Why this matters for KUPC:
 
 Login, registration, OTP verification, and refresh endpoints should be rate-limited together under the real auth route prefix. This reduces brute-force risk and keeps middleware placement close to the auth domain.
 
-## Current Milestone 1 Verification
+## Milestone 2 Completed - Student Registration & OTP
+
+Milestone 2 adds the first real authentication workflow for KUPC students:
+
+```text
+POST /api/v1/auth/register/student
+POST /api/v1/auth/verify-otp
+```
+
+The backend now validates KU student registration input, creates an unverified Supabase Auth user, creates KUPC identity rows, generates and stores a hashed OTP, verifies OTP attempts, marks the student verified, creates a session, stores a hashed refresh token, and returns an access/refresh token pair only after OTP verification succeeds.
+
+### Files Changed For Milestone 2
+
+```text
+src/modules/auth/auth.validation.ts
+src/modules/auth/auth.routes.ts
+src/modules/auth/auth.controller.ts
+src/modules/auth/auth.service.ts
+src/utils/AppError.ts
+src/utils/auth.ts
+src/utils/jwt.ts
+src/middleware/errorHandler.ts
+src/middleware/validate.ts
+src/database/users.repository.ts
+src/database/students.repository.ts
+src/database/sessions.repository.ts
+src/database/refreshTokens.repository.ts
+src/database/studentOtps.repository.ts
+package.json
+pnpm-lock.yaml
+```
+
+### Dependency Added
+
+```text
+jsonwebtoken
+@types/jsonwebtoken
+```
+
+Why this matters for KUPC:
+
+OTP verification must return a short-lived access token. `jsonwebtoken` is now used to sign that access JWT with the configured `JWT_SECRET` and `JWT_EXPIRES_IN`.
+
+### Student Registration Endpoint
+
+Route:
+
+```text
+POST /api/v1/auth/register/student
+```
+
+Request:
+
+```json
+{
+  "email": "user@ku.edu.np",
+  "full_name": "Student Name",
+  "password": "password1"
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "otp_sent": true,
+    "expires_in": 600
+  },
+  "message": "Student OTP sent",
+  "error": null
+}
+```
+
+Implementation flow:
+
+```text
+validate request body
+  -> normalize email
+  -> check duplicate user row
+  -> create Supabase Auth user
+  -> create KUPC users row with role=STUDENT and email_verified=false
+  -> create students row with ku_id and full_name
+  -> generate numeric OTP
+  -> hash OTP with SHA-256
+  -> store hashed OTP in student_otps
+  -> deliver OTP through the current development delivery hook
+  -> return otp_sent=true and expiry seconds
+```
+
+Why this matters for KUPC:
+
+Only KU students should enter the student side of the placement system. This route enforces the KU email rule before creating a student identity and deliberately does not issue tokens yet. That protects future student-only features such as profiles, resumes, swiping, and chat from unverified accounts.
+
+### Registration Validation
+
+File:
+
+```text
+src/modules/auth/auth.validation.ts
+```
+
+Validation rules:
+
+- `email` must be a valid email.
+- Email domain must be `ku.edu.np` or a subdomain ending in `.ku.edu.np`.
+- `full_name` must be 2-100 characters.
+- `password` must be at least 8 characters.
+- `password` must contain at least one number.
+- Unknown fields are stripped by the Zod schema.
+
+Invalid KU domain behavior:
+
+```text
+HTTP 400
+code: INVALID_EMAIL_DOMAIN
+```
+
+Why this matters for KUPC:
+
+The student side is institution-specific. The frontend can use `INVALID_EMAIL_DOMAIN` to show a precise message like "Please use your KU email address" instead of a generic validation failure.
+
+### OTP Generation And Storage
+
+Files:
+
+```text
+src/utils/auth.ts
+src/database/studentOtps.repository.ts
+```
+
+What was added:
+
+- `generateNumericOtp(length)`
+- `hashToken(token)`
+- `addSeconds(date, seconds)`
+- `parseDurationToSeconds(value)`
+- `studentOtpsRepository.create()`
+- `studentOtpsRepository.findLatestActiveByEmail()`
+- `studentOtpsRepository.incrementAttempts()`
+- `studentOtpsRepository.consume()`
+
+The raw OTP is never stored. The backend stores only:
+
+```text
+email
+otp_hash
+attempts
+expires_at
+consumed_at
+created_at
+```
+
+Why this matters for KUPC:
+
+An OTP is a short-lived credential. Storing only the hash reduces damage if the OTP table is ever exposed. Tracking attempts also gives the backend a clean way to reject repeated guessing.
+
+### OTP Delivery Current State
+
+Current implementation:
+
+```text
+Development mode logs the OTP to the backend console.
+Production mode does not log the OTP.
+```
+
+Why this matters for KUPC:
+
+The repo does not yet include an email/SMS provider. For local development and demo testing, console delivery lets the team complete the flow. Before production, this must be replaced with a real email provider or a Supabase-backed email OTP flow.
+
+Production TODO:
+
+- Choose the OTP delivery provider.
+- Add the required provider credentials to `.env.example`.
+- Send the OTP email from `deliverStudentOtp()`.
+- Never log OTPs in production.
+
+### OTP Verification Endpoint
+
+Route:
+
+```text
+POST /api/v1/auth/verify-otp
+```
+
+Request:
+
+```json
+{
+  "email": "user@ku.edu.np",
+  "otp": "482913"
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "access_token": "...",
+    "refresh_token": "...",
+    "user": {
+      "id": "...",
+      "email": "user@ku.edu.np",
+      "role": "STUDENT",
+      "email_verified": true,
+      "status": "active"
+    }
+  },
+  "message": "Student verified",
+  "error": null
+}
+```
+
+Implementation flow:
+
+```text
+validate request body
+  -> normalize email
+  -> find latest unconsumed OTP for email
+  -> reject missing OTP as INVALID_OTP
+  -> reject expired OTP as OTP_EXPIRED
+  -> reject max-attempt OTP as INVALID_OTP
+  -> compare submitted OTP hash to stored hash
+  -> increment attempts on mismatch
+  -> load matching student user
+  -> mark email_verified=true
+  -> consume OTP
+  -> create session row
+  -> generate refresh token
+  -> hash refresh token
+  -> store hashed refresh token
+  -> sign access token
+  -> return access token, refresh token, and user identity
+```
+
+Why this matters for KUPC:
+
+Tokens are issued only after OTP verification. That means unverified student accounts cannot access protected student routes. This is the important gate that future KUPC features will trust.
+
+### OTP Failure Behavior
+
+Current failure codes:
+
+```text
+INVALID_OTP
+OTP_EXPIRED
+```
+
+Account enumeration protection:
+
+- Missing OTP record returns `INVALID_OTP`.
+- Missing user after an OTP lookup returns `INVALID_OTP`.
+- Wrong OTP returns `INVALID_OTP`.
+- Only an expired known OTP returns `OTP_EXPIRED`.
+
+Why this matters for KUPC:
+
+The backend should avoid revealing whether an email belongs to a registered student. This reduces account enumeration risk.
+
+### Session And Refresh Token Creation
+
+Files:
+
+```text
+src/database/sessions.repository.ts
+src/database/refreshTokens.repository.ts
+src/utils/auth.ts
+src/utils/jwt.ts
+```
+
+On successful OTP verification:
+
+- A session row is created.
+- A secure random refresh token is generated.
+- The refresh token is hashed with SHA-256.
+- Only the refresh token hash is stored.
+- An access token is signed with:
+  - `sub`
+  - `role`
+  - `email`
+  - `sessionId`
+
+Why this matters for KUPC:
+
+The access token powers immediate protected API access. The refresh token supports long-lived login sessions and prepares the backend for Milestone 8 refresh-token rotation.
+
+### Error Response Shape Updated
+
+Files:
+
+```text
+src/utils/AppError.ts
+src/middleware/errorHandler.ts
+```
+
+`AppError` now carries:
+
+```text
+message
+statusCode
+code
+isOperational
+```
+
+Error responses now include:
+
+```json
+{
+  "success": false,
+  "data": null,
+  "message": "Request validation failed",
+  "error": {
+    "code": "INVALID_EMAIL_DOMAIN",
+    "statusCode": 400,
+    "isOperational": true
+  }
+}
+```
+
+Why this matters for KUPC:
+
+The frontend needs stable codes to decide what to show. For example, the student registration page can treat `INVALID_EMAIL_DOMAIN`, `EMAIL_ALREADY_REGISTERED`, `INVALID_OTP`, and `OTP_EXPIRED` differently.
+
+### Database Tables Required By Milestone 2
+
+Milestone 2 needs the Phase 2 identity/session tables plus one OTP table:
+
+```text
+users
+students
+sessions
+refresh_tokens
+student_otps
+```
+
+Expected `student_otps` shape:
+
+```text
+id uuid primary key default gen_random_uuid()
+email text not null
+otp_hash text not null
+attempts integer not null default 0
+expires_at timestamptz not null
+consumed_at timestamptz null
+created_at timestamptz not null default now()
+```
+
+Additional expected `refresh_tokens` column:
+
+```text
+session_id uuid not null references sessions(id)
+```
+
+Why this matters for KUPC:
+
+The original Phase 2 PDF lists `refresh_tokens` as user-based, but refresh-token reuse detection is safer and easier when refresh tokens are tied to a concrete login session. `session_id` also supports future "active sessions" and "logout this device" features.
+
+### Transaction Caveat
+
+The Phase 2 guide says user and student rows should be inserted in the same transaction. The current Supabase JS implementation creates:
+
+```text
+Supabase Auth user
+users row
+students row
+student_otps row
+```
+
+If one of the database steps fails after the Supabase Auth user is created, the service attempts to delete the Supabase Auth user as cleanup.
+
+Important limitation:
+
+This is not a true database transaction across Supabase Auth and public schema tables.
+
+Recommended production improvement:
+
+- Add a Postgres RPC/database function for student registration.
+- Let the RPC create `users`, `students`, and `student_otps` atomically.
+- Keep Supabase Auth user cleanup as a fallback if auth creation succeeds but the RPC fails.
+
+Why this matters for KUPC:
+
+Without a real transaction, rare partial-failure states are possible. The current cleanup is acceptable for development, but a placement platform should use atomic writes before production.
+
+## Current Verification
 
 Command run:
 
@@ -506,13 +893,8 @@ The TypeScript check had to be run outside the sandbox because pnpm symlinked pa
 
 ## What Has Not Been Implemented Yet
 
-Milestone 1 intentionally did not implement business logic. The following are still pending:
+The following are still pending:
 
-- Student registration controller/service logic.
-- Supabase Auth sign-up integration.
-- OTP generation and delivery.
-- OTP storage/attempt tracking.
-- OTP verification.
 - Company registration controller/service logic.
 - Company verification document placeholder endpoint.
 - Login endpoint.
@@ -524,8 +906,10 @@ Milestone 1 intentionally did not implement business logic. The following are st
 - `GET /api/v1/auth/me`.
 - Student dashboard smoke route.
 - Admin dashboard smoke route.
-- Real repository methods.
+- Full repository coverage for all later milestones.
 - Full typed auth error subclasses.
+- Production OTP email delivery.
+- True transaction/RPC for student registration.
 - Tests.
 
 ## Immediate Blockers
@@ -554,6 +938,7 @@ Other blockers before completing Phase 2:
   - `companies`
   - `sessions`
   - `refresh_tokens`
+  - `student_otps`
   - `company_requests`
 - A test framework is not configured.
 - Admin TOTP needs a decision:
@@ -632,9 +1017,26 @@ Columns used in Phase 2:
 
 - `id`
 - `user_id`
+- `session_id`
 - `token_hash`
 - `expires_at`
 - `revoked`
+- `created_at`
+
+### student_otps
+
+Purpose:
+
+Stores hashed OTPs for KU student email verification.
+
+Columns used in Phase 2:
+
+- `id`
+- `email`
+- `otp_hash`
+- `attempts`
+- `expires_at`
+- `consumed_at`
 - `created_at`
 
 ### company_requests
@@ -655,22 +1057,20 @@ Columns used in Phase 2:
 
 Recommended order from here:
 
-1. Extend `AppError` to carry stable auth error codes.
-2. Add real JWT helpers in `src/utils/jwt.ts`.
-3. Add auth helpers for OTP generation and token hashing in `src/utils/auth.ts`.
-4. Implement repository methods for `users`, `students`, `companies`, `sessions`, and `refresh_tokens`.
-5. Build `POST /api/v1/auth/register/student`.
-6. Build `POST /api/v1/auth/verify-otp`.
-7. Build `POST /api/v1/auth/register/company`.
-8. Build `POST /api/v1/auth/login`.
-9. Build `POST /api/v1/auth/admin/login`.
-10. Implement `authenticate`.
-11. Finalize `authorize`.
-12. Finalize `requireVerifiedCompany`.
-13. Build refresh-token rotation.
-14. Build logout.
-15. Add protected smoke-test endpoints.
-16. Add tests/manual verification for the Phase 2 matrix.
+1. Create/verify Supabase tables for `users`, `students`, `sessions`, `refresh_tokens`, and `student_otps`.
+2. Replace development OTP console delivery with a real email provider or Supabase email OTP integration.
+3. Add a registration RPC for true transaction behavior.
+4. Build `POST /api/v1/auth/register/company`.
+5. Build company verification document placeholder endpoint.
+6. Build `POST /api/v1/auth/login`.
+7. Build `POST /api/v1/auth/admin/login`.
+8. Implement `authenticate`.
+9. Finalize `authorize`.
+10. Finalize `requireVerifiedCompany`.
+11. Build refresh-token rotation.
+12. Build logout.
+13. Add protected smoke-test endpoints.
+14. Add tests/manual verification for the Phase 2 matrix.
 
 ## Exit Checklist For Full Phase 2
 

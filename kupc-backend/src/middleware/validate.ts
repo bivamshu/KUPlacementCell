@@ -1,5 +1,6 @@
 import { RequestHandler } from 'express';
 import { ZodSchema } from 'zod';
+import { AUTH_ERROR_CODES } from '../modules/auth';
 import { AppError } from '../utils/AppError';
 
 type RequestSchemaOutput = {
@@ -17,7 +18,10 @@ export const validate = (schema: ZodSchema<RequestSchemaOutput>): RequestHandler
     });
 
     if (!result.success) {
-      next(new AppError('Request validation failed', 400));
+      const hasKuEmailDomainError = result.error.issues.some((issue) => issue.message === 'Email must use the KU institutional domain');
+      const code = hasKuEmailDomainError ? AUTH_ERROR_CODES.INVALID_EMAIL_DOMAIN : 'VALIDATION_ERROR';
+
+      next(new AppError('Request validation failed', 400, code));
       return;
     }
 
