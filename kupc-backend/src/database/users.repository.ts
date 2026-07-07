@@ -71,10 +71,10 @@ export const usersRepository = {
     return data;
   },
 
-  async markEmailVerified(id: string): Promise<UserRecord> {
+  async updateEmailVerified(id: string, emailVerified: boolean): Promise<UserRecord> {
     const { data, error } = await supabaseAdmin
       .from('users')
-      .update({ email_verified: true, status: 'active' })
+      .update({ email_verified: emailVerified, status: 'active' })
       .eq('id', id)
       .select()
       .single();
@@ -84,5 +84,9 @@ export const usersRepository = {
     }
 
     return data;
+  },
+
+  async markEmailVerified(id: string): Promise<UserRecord> {
+    return this.updateEmailVerified(id, true);
   }
 };

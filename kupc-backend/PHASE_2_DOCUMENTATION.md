@@ -49,7 +49,7 @@ What was missing before Phase 2:
 
 ## Milestone 1 Completed - Auth Module Foundation
 
-Milestone 1 is now implemented as foundation scaffolding. It does not implement registration, login, OTP, refresh-token rotation, or logout yet. Its purpose is to prepare the backend so those features can be added cleanly in later milestones.
+Milestone 1 was implemented as the foundation scaffolding for the auth module. Later milestones now build on these files for student OTP verification, company registration, login, sessions, and JWT issuance. Refresh-token rotation and logout are still pending.
 
 ### Files Added
 
@@ -367,7 +367,7 @@ Note:
 
 The validation middleware currently returns a generic `AppError`. In a later milestone, `AppError` should be extended to carry stable machine-readable error codes such as `INVALID_EMAIL_DOMAIN`.
 
-### 12. Added Middleware Placeholders
+### 12. Added Auth Middleware
 
 Files:
 
@@ -378,9 +378,9 @@ Files:
 
 Current state:
 
-- `authenticate.ts` is a placeholder and returns 501.
-- `authorize.ts` checks `req.user.role` and enforces allowed roles.
-- `requireVerifiedCompany.ts` checks that the user is a company and has `verificationStatus = approved`.
+- `authenticate.ts` reads a Bearer access token, verifies the JWT, loads the user row, rejects suspended/deleted users, attaches `req.user`, and adds company verification status for company accounts.
+- `authorize.ts` checks `req.user.role`, enforces allowed roles, and returns stable `MISSING_TOKEN` or `INSUFFICIENT_ROLE` codes.
+- `requireVerifiedCompany.ts` checks that the user is a company and has `verificationStatus = approved`; pending companies receive `PENDING_VERIFICATION`.
 - `attachUser.ts` is a placeholder for later user/session attachment behavior.
 
 Why this matters for KUPC:
@@ -397,7 +397,7 @@ Request
 
 That pipeline is central to KUPC. A pending company should be able to log in and see its dashboard, but should not be able to post jobs or access restricted company features until approved by an admin.
 
-### 13. Added Repository Placeholders
+### 13. Added Auth Repositories
 
 Directory: `src/database/`
 
@@ -421,17 +421,17 @@ Repositories will isolate database access from auth business logic. For example:
 
 Keeping this database code out of controllers makes later phases easier to maintain.
 
-### 14. Added Utility Placeholders
+### 14. Added Auth Utilities
 
 Files:
 
 - `src/utils/jwt.ts`
 - `src/utils/auth.ts`
 
-Planned use:
+Current use:
 
-- `jwt.ts` will sign and verify access tokens.
-- `auth.ts` will hold password/OTP/token hashing helpers.
+- `jwt.ts` signs and verifies access tokens.
+- `auth.ts` holds OTP generation, secure refresh-token generation, token hashing, date math, and duration parsing helpers.
 
 Why this matters for KUPC:
 
@@ -873,12 +873,443 @@ Why this matters for KUPC:
 
 Without a real transaction, rare partial-failure states are possible. The current cleanup is acceptable for development, but a placement platform should use atomic writes before production.
 
+## Milestone 3 Completed - Company Registration
+
+Milestone 3 adds the company onboarding workflow for KUPC recruiters:
+
+```text
+POST /api/v1/auth/register/company
+POST /api/v1/auth/company/verification-documents
+```
+
+The backend now validates company registration input, creates a Supabase Auth user through the public Supabase sign-up flow, creates the KUPC `users` row with role `COMPANY`, creates a matching `companies` row with `verification_status = pending`, and exposes a protected placeholder endpoint for company verification document metadata.
+
+### Files Changed For Milestone 3
+
+```text
+src/modules/auth/auth.validation.ts
+src/modules/auth/auth.routes.ts
+src/modules/auth/auth.controller.ts
+src/modules/auth/auth.service.ts
+src/database/users.repository.ts
+src/database/companies.repository.ts
+src/database/companyRequests.repository.ts
+src/middleware/authenticate.ts
+src/middleware/authorize.ts
+```
+
+### Company Registration Validation
+
+File:
+
+```text
+src/modules/auth/auth.validation.ts
+```
+
+Validation rules:
+
+- `company_name` must be 2-150 characters.
+- `email` must be a valid email address.
+- `password` must be at least 8 characters.
+- `password` must contain at least one number.
+- `website` is optional during registration.
+- If `website` is provided, it must be a valid URL.
+- Unknown fields are stripped by the Zod schema.
+
+Why this matters for KUPC:
+
+Company registration is a public endpoint, so it is exposed to malformed input and abuse attempts. Validating at the route boundary keeps bad payloads out of the service layer and gives the frontend a predictable contract. The website is optional here because the Phase 2 goal is account creation; the full company verification workflow in Phase 11 can require a website before approval.
+
+### Company Signup Endpoint
+
+Route:
+
+```text
+POST /api/v1/auth/register/company
+```
+
+Request:
+
+```json
+{
+  "company_name": "Acme Nepal",
+  "email": "hr@acme.com",
+  "password": "password1",
+  "website": "https://acme.com"
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "company_id": "...",
+    "verification_status": "pending"
+  },
+  "message": "Company registration submitted",
+  "error": null
+}
+```
+
+Implementation flow:
+
+```text
+validate request body
+  -> normalize email
+  -> check duplicate users row
+  -> create Supabase Auth user with company metadata
+  -> create KUPC users row with role=COMPANY
+  -> create companies row with verification_status=pending
+  -> return company_id and pending verification status
+```
+
+Why this matters for KUPC:
+
+Companies need a different onboarding path from students. They are not restricted to a KU email domain and they do not use the student OTP flow. Instead, Supabase handles standard email confirmation, and KUPC stores the company in a pending state. That lets recruiters start the account process without immediately gaining access to high-impact actions such as posting jobs, swiping students, or contacting candidates.
+
+### Pending Company State
+
+The company row is created with:
+
+```text
+verification_status = pending
+verified_at = null
+```
+
+Why this matters for KUPC:
+
+KUPC must protect students from unverified employers. A pending company can authenticate and view its own account state, but restricted company actions should later run through:
+
+```text
+authenticate -> authorize(Role.COMPANY) -> requireVerifiedCompany -> controller
+```
+
+That separation is intentional. Authentication answers "who are you?", RBAC answers "are you a company?", and the verified-company middleware answers "has the placement office approved this company yet?"
+
+### Verification Document Placeholder Endpoint
+
+Route:
+
+```text
+POST /api/v1/auth/company/verification-documents
+```
+
+Auth:
+
+```text
+Company access token required
+```
+
+Request:
+
+```json
+{
+  "document_type": "business_registration",
+  "file_url": ""
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "request_id": "...",
+    "status": "pending"
+  },
+  "message": "Company verification document submitted",
+  "error": null
+}
+```
+
+Implementation flow:
+
+```text
+authenticate access token
+  -> authorize Role.COMPANY
+  -> validate document metadata
+  -> load company row by req.user.id
+  -> insert company_requests row with status=pending
+  -> return request_id and status
+```
+
+Why this matters for KUPC:
+
+Phase 2 does not implement full file upload to Supabase Storage. That belongs to later profile, storage, and company verification phases. This placeholder still matters because it proves the protected company route pipeline works and creates the database shape that the admin verification workflow will consume later.
+
+### Company Registration Caveat
+
+The service creates:
+
+```text
+Supabase Auth user
+users row
+companies row
+```
+
+If the public schema insert fails after Supabase Auth user creation, the service attempts to delete the Supabase Auth user as cleanup.
+
+Important limitation:
+
+This is not a true cross-system transaction. Before production, company registration should move public table writes into a Postgres RPC/database function so `users` and `companies` are created atomically after Supabase Auth succeeds.
+
+## Milestone 4 Completed - Login
+
+Milestone 4 adds login for students, companies, and admins:
+
+```text
+POST /api/v1/auth/login
+POST /api/v1/auth/admin/login
+```
+
+The backend now validates login requests, delegates password verification to Supabase Auth, looks up the KUPC user role from the `users` table, creates a session row, stores a hashed refresh token, signs a short-lived access JWT, and returns the token pair plus user identity.
+
+### Files Changed For Milestone 4
+
+```text
+src/modules/auth/auth.validation.ts
+src/modules/auth/auth.routes.ts
+src/modules/auth/auth.controller.ts
+src/modules/auth/auth.service.ts
+src/database/users.repository.ts
+src/database/sessions.repository.ts
+src/database/refreshTokens.repository.ts
+src/utils/auth.ts
+src/utils/jwt.ts
+src/middleware/authorize.ts
+src/middleware/requireVerifiedCompany.ts
+```
+
+### Shared Student And Company Login Endpoint
+
+Route:
+
+```text
+POST /api/v1/auth/login
+```
+
+Request:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "password1"
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "access_token": "...",
+    "refresh_token": "...",
+    "user": {
+      "id": "...",
+      "email": "user@example.com",
+      "role": "COMPANY",
+      "email_verified": true,
+      "status": "active",
+      "verification_status": "pending"
+    }
+  },
+  "message": "Login successful",
+  "error": null
+}
+```
+
+Implementation flow:
+
+```text
+validate request body
+  -> normalize email
+  -> verify email/password with Supabase Auth
+  -> load KUPC users row
+  -> allow only STUDENT and COMPANY roles on the shared login route
+  -> reject suspended/deleted accounts
+  -> reject unverified students with ACCOUNT_NOT_VERIFIED
+  -> sync company/admin email_verified from Supabase confirmation state when applicable
+  -> create sessions row with device_info and ip_address
+  -> generate refresh token and store only its SHA-256 hash
+  -> sign access JWT with sub, role, email, and sessionId
+  -> return access token, refresh token, and user identity
+```
+
+Why this matters for KUPC:
+
+Students and companies share the normal product login path, but they have different account-state rules. Students must complete KU OTP verification before receiving tokens. Companies can receive tokens after Supabase confirms their email, even if their company verification is still pending, because pending-company restrictions are enforced at protected route level. This lets a company view onboarding and verification status while still blocking sensitive actions.
+
+### Student Login Rule
+
+If a student has:
+
+```text
+email_verified = false
+```
+
+the service returns:
+
+```text
+HTTP 403
+code: ACCOUNT_NOT_VERIFIED
+```
+
+Why this matters for KUPC:
+
+Student identity is tied to a KU institutional email. Issuing tokens before OTP verification would let an unverified user reach student-only surfaces. The explicit `ACCOUNT_NOT_VERIFIED` code lets the frontend redirect the student to OTP verification or resend-OTP UX instead of showing a generic login error.
+
+### Company Login Rule
+
+Pending companies can log in successfully. The response includes:
+
+```text
+verification_status = pending
+```
+
+Why this matters for KUPC:
+
+The company dashboard needs to show verification progress, missing documents, and approval status. Blocking pending companies at login would prevent that experience. Instead, future routes such as job creation and student swiping should use `requireVerifiedCompany` to return:
+
+```text
+HTTP 403
+code: PENDING_VERIFICATION
+```
+
+### Admin Login Endpoint
+
+Route:
+
+```text
+POST /api/v1/auth/admin/login
+```
+
+Request:
+
+```json
+{
+  "email": "admin@ku.edu.np",
+  "password": "password1",
+  "totp_code": "123456"
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "access_token": "...",
+    "refresh_token": "...",
+    "user": {
+      "id": "...",
+      "email": "admin@ku.edu.np",
+      "role": "ADMIN",
+      "email_verified": true,
+      "status": "active"
+    }
+  },
+  "message": "Admin login successful",
+  "error": null
+}
+```
+
+Current implementation:
+
+- Admin login has a separate route.
+- Normal `/api/v1/auth/login` now rejects `ADMIN` users with `INVALID_CREDENTIALS`.
+- `/api/v1/auth/admin/login` only allows `ADMIN` users.
+- Full TOTP verification is not implemented yet.
+- Password-only admin login is available only when `ADMIN_PASSWORD_LOGIN_ENABLED=true`.
+- If the demo flag is disabled and no TOTP implementation is present, the route returns `ADMIN_TOTP_NOT_CONFIGURED`.
+
+Why this matters for KUPC:
+
+Admin accounts have platform-wide power: approving companies, suspending users, moderating content, and later viewing analytics. They should not share the same discoverable login behavior as normal users. Keeping the route separate also lets the project add mandatory TOTP without changing the student/company login contract.
+
+Security note:
+
+The password-only admin path is for local/demo use only. It should stay disabled in staging and production until real TOTP enrollment and verification are implemented.
+
+### Session And Token Issuance
+
+Every successful login creates:
+
+```text
+sessions row
+refresh_tokens row
+access JWT
+```
+
+The session stores:
+
+```text
+user_id
+device_info
+ip_address
+expires_at
+```
+
+The refresh token table stores:
+
+```text
+user_id
+session_id
+token_hash
+expires_at
+revoked=false
+```
+
+Why this matters for KUPC:
+
+Sessions give the platform an audit trail for logins and prepare the backend for "active sessions" UI later. Hashing refresh tokens keeps long-lived credentials out of the database in raw form. The access token stays short-lived and carries only enough identity data for protected request authentication.
+
+### Role Safety Fix
+
+Milestone 4 includes an important route-boundary rule:
+
+```text
+/api/v1/auth/login       -> STUDENT and COMPANY only
+/api/v1/auth/admin/login -> ADMIN only
+```
+
+Why this matters for KUPC:
+
+Without this separation, an admin could accidentally or intentionally authenticate through the public student/company route. The backend now checks allowed roles before creating sessions or token pairs, so the wrong login route cannot mint tokens for the wrong account type.
+
+### Error Codes Used By Milestone 4
+
+Current login-related error codes:
+
+```text
+INVALID_CREDENTIALS
+ACCOUNT_NOT_VERIFIED
+ACCOUNT_SUSPENDED
+ADMIN_TOTP_NOT_CONFIGURED
+```
+
+Middleware error codes improved while completing this milestone:
+
+```text
+MISSING_TOKEN
+INSUFFICIENT_ROLE
+PENDING_VERIFICATION
+```
+
+Why this matters for KUPC:
+
+Frontend code should branch on stable machine-readable codes, not message strings. For example, `ACCOUNT_NOT_VERIFIED` can send a student to OTP verification, while `PENDING_VERIFICATION` can show a company approval-pending screen.
+
 ## Current Verification
 
 Command run:
 
 ```bash
-tsc --noEmit
+node node_modules/typescript/bin/tsc --noEmit
 ```
 
 Result:
@@ -895,21 +1326,16 @@ The TypeScript check had to be run outside the sandbox because pnpm symlinked pa
 
 The following are still pending:
 
-- Company registration controller/service logic.
-- Company verification document placeholder endpoint.
-- Login endpoint.
-- Admin login endpoint.
-- JWT signing and verification.
-- Refresh token generation, hashing, storage, and rotation.
-- Session tracking.
+- Refresh token rotation endpoint.
 - Logout.
 - `GET /api/v1/auth/me`.
 - Student dashboard smoke route.
 - Admin dashboard smoke route.
 - Full repository coverage for all later milestones.
 - Full typed auth error subclasses.
+- Production TOTP verification for admin login.
 - Production OTP email delivery.
-- True transaction/RPC for student registration.
+- True transaction/RPC for student and company registration.
 - Tests.
 
 ## Immediate Blockers
@@ -927,6 +1353,7 @@ OTP_LENGTH=6
 OTP_EXPIRES_IN=10m
 OTP_MAX_ATTEMPTS=5
 KU_EMAIL_DOMAIN=ku.edu.np
+ADMIN_PASSWORD_LOGIN_ENABLED=false
 ```
 
 Other blockers before completing Phase 2:
@@ -941,9 +1368,7 @@ Other blockers before completing Phase 2:
   - `student_otps`
   - `company_requests`
 - A test framework is not configured.
-- Admin TOTP needs a decision:
-  - implement full TOTP now, or
-  - feature-flag a demo-only password path with a tracked TODO.
+- Admin TOTP is not implemented yet. Password-only admin login is feature-flagged through `ADMIN_PASSWORD_LOGIN_ENABLED` and must stay disabled outside local/demo use.
 
 ## Phase 2 Data Model Reference
 
@@ -1057,20 +1482,15 @@ Columns used in Phase 2:
 
 Recommended order from here:
 
-1. Create/verify Supabase tables for `users`, `students`, `sessions`, `refresh_tokens`, and `student_otps`.
+1. Create/verify Supabase tables for `users`, `students`, `companies`, `sessions`, `refresh_tokens`, `student_otps`, and `company_requests`.
 2. Replace development OTP console delivery with a real email provider or Supabase email OTP integration.
-3. Add a registration RPC for true transaction behavior.
-4. Build `POST /api/v1/auth/register/company`.
-5. Build company verification document placeholder endpoint.
-6. Build `POST /api/v1/auth/login`.
-7. Build `POST /api/v1/auth/admin/login`.
-8. Implement `authenticate`.
-9. Finalize `authorize`.
-10. Finalize `requireVerifiedCompany`.
-11. Build refresh-token rotation.
-12. Build logout.
-13. Add protected smoke-test endpoints.
-14. Add tests/manual verification for the Phase 2 matrix.
+3. Add registration RPCs for true transaction behavior.
+4. Implement production admin TOTP enrollment and verification.
+5. Build refresh-token rotation.
+6. Build logout.
+7. Build `GET /api/v1/auth/me`.
+8. Add protected student and admin smoke-test endpoints.
+9. Add tests/manual verification for the Phase 2 matrix.
 
 ## Exit Checklist For Full Phase 2
 

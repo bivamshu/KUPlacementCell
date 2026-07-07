@@ -121,6 +121,49 @@ function mapRegistrationError(error: unknown): AppError {
   return new AppError(message, 500);
 }
 
+async function loginWithPassword(
+  input: LoginInput,
+  context: RequestContext,
+  allowedRoles: Role[]
+): Promise<Awaited<ReturnType<typeof issueTokenPair>>> {
+  const email = normalizeEmail(input.email);
+  const { data: authData, error } = await supabaseAnon.auth.signInWithPassword({
+    email,
+    password: input.password
+  });
+
+  if (error) {
+    throw new AppError('Invalid credentials', 401, AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+  }
+
+  let user = await usersRepository.findByEmail(email);
+
+  if (!user) {
+    throw new AppError('Invalid credentials', 401, AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+  }
+
+  if (!allowedRoles.includes(user.role)) {
+    throw new AppError('Invalid credentials', 401, AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+  }
+
+  if (user.status !== 'active') {
+    throw new AppError('Account is suspended', 403, AUTH_ERROR_CODES.ACCOUNT_SUSPENDED);
+  }
+
+  if (user.role === Role.STUDENT && !user.email_verified) {
+    throw new AppError('Account is not verified', 403, AUTH_ERROR_CODES.ACCOUNT_NOT_VERIFIED);
+  }
+
+  const supabaseEmailVerified = Boolean(authData.user?.email_confirmed_at);
+  const shouldSyncEmailVerification = user.role !== Role.STUDENT && supabaseEmailVerified && !user.email_verified;
+
+  if (shouldSyncEmailVerification) {
+    user = await usersRepository.updateEmailVerified(user.id, true);
+  }
+
+  return issueTokenPair(user, context);
+}
+
 export const authService = {
   async registerStudent(input: RegisterStudentInput): Promise<{ otp_sent: boolean; expires_in: number }> {
     const email = normalizeEmail(input.email);
@@ -285,31 +328,7 @@ export const authService = {
   },
 
   async login(input: LoginInput, context: RequestContext): Promise<Awaited<ReturnType<typeof issueTokenPair>>> {
-    const email = normalizeEmail(input.email);
-    const { error } = await supabaseAnon.auth.signInWithPassword({
-      email,
-      password: input.password
-    });
-
-    if (error) {
-      throw new AppError('Invalid credentials', 401, AUTH_ERROR_CODES.INVALID_CREDENTIALS);
-    }
-
-    const user = await usersRepository.findByEmail(email);
-
-    if (!user) {
-      throw new AppError('Invalid credentials', 401, AUTH_ERROR_CODES.INVALID_CREDENTIALS);
-    }
-
-    if (user.status !== 'active') {
-      throw new AppError('Account is suspended', 403, AUTH_ERROR_CODES.ACCOUNT_SUSPENDED);
-    }
-
-    if (user.role === Role.STUDENT && !user.email_verified) {
-      throw new AppError('Account is not verified', 403, AUTH_ERROR_CODES.ACCOUNT_NOT_VERIFIED);
-    }
-
-    return issueTokenPair(user, context);
+    return loginWithPassword(input, context, [Role.STUDENT, Role.COMPANY]);
   },
 
   async adminLogin(input: AdminLoginInput, context: RequestContext): Promise<Awaited<ReturnType<typeof issueTokenPair>>> {
@@ -321,12 +340,6 @@ export const authService = {
       throw new AppError('Admin TOTP verification is not implemented yet', 501, 'ADMIN_TOTP_NOT_CONFIGURED');
     }
 
-    const result = await this.login(input, context);
-
-    if (result.user.role !== Role.ADMIN) {
-      throw new AppError('Invalid credentials', 401, AUTH_ERROR_CODES.INVALID_CREDENTIALS);
-    }
-
-    return result;
+    return loginWithPassword(input, context, [Role.ADMIN]);
   }
 };
