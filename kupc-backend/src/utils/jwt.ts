@@ -24,10 +24,22 @@ export function verifyAccessToken(token: string): AccessTokenPayload {
     throw new Error('Invalid token payload');
   }
 
+  const roleValues: string[] = Object.values(Role);
+
+  if (
+    typeof payload.sub !== 'string' ||
+    typeof payload.email !== 'string' ||
+    typeof payload.sessionId !== 'string' ||
+    typeof payload.role !== 'string' ||
+    !roleValues.includes(payload.role)
+  ) {
+    throw new Error('Invalid token payload');
+  }
+
   return {
-    sub: payload.sub as string,
+    sub: payload.sub,
     role: payload.role as Role,
-    email: payload.email as string,
-    sessionId: payload.sessionId as string
+    email: payload.email,
+    sessionId: payload.sessionId
   };
 }

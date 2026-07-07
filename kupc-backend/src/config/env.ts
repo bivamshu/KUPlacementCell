@@ -16,6 +16,7 @@ const envSchema = z.object({
   OTP_EXPIRES_IN: z.string().min(1).default('10m'),
   OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   KU_EMAIL_DOMAIN: z.string().min(1).default('ku.edu.np'),
+  AUTH_USER_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(30),
   ADMIN_PASSWORD_LOGIN_ENABLED: z.coerce.boolean().default(false)
 });
 

@@ -123,6 +123,7 @@ OTP_LENGTH=6
 OTP_EXPIRES_IN=10m
 OTP_MAX_ATTEMPTS=5
 KU_EMAIL_DOMAIN=ku.edu.np
+AUTH_USER_CACHE_TTL_SECONDS=30
 ```
 
 Why this matters for KUPC:
@@ -301,6 +302,7 @@ Added `AuthenticatedUser`:
 ```ts
 {
   id: string;
+  sessionId: string;
   role: Role;
   email: string;
   emailVerified: boolean;
@@ -311,7 +313,7 @@ Added `AuthenticatedUser`:
 
 Why this matters for KUPC:
 
-Every protected route will eventually depend on `req.user`. Student-only routes, company-only routes, admin routes, and pending-company checks need a consistent identity shape.
+Every protected route will eventually depend on `req.user`. Student-only routes, company-only routes, admin routes, pending-company checks, and future logout/session-revocation flows need a consistent identity shape. `sessionId` is included because access tokens are tied to a specific login session.
 
 ### 10. Added Express Request Typing
 
@@ -1303,6 +1305,255 @@ PENDING_VERIFICATION
 Why this matters for KUPC:
 
 Frontend code should branch on stable machine-readable codes, not message strings. For example, `ACCOUNT_NOT_VERIFIED` can send a student to OTP verification, while `PENDING_VERIFICATION` can show a company approval-pending screen.
+
+## Milestone 5 Completed - Authentication Middleware
+
+Milestone 5 adds the protected-route gate that every private KUPC feature will rely on:
+
+```text
+authenticate
+```
+
+The backend now reads Bearer access tokens from the `Authorization` header, verifies JWT signature and expiry with `JWT_SECRET`, validates the decoded token payload shape, resolves the current user identity through a short-TTL cache with database fallback, rejects missing/invalid/expired tokens with stable error codes, rejects suspended/deleted users, attaches the resolved identity to `req.user`, and then calls `next()`.
+
+### Files Changed For Milestone 5
+
+```text
+src/middleware/authenticate.ts
+src/middleware/authUserCache.ts
+src/types/express.d.ts
+src/modules/auth/auth.types.ts
+src/utils/jwt.ts
+src/config/env.ts
+src/config/config.ts
+.env.example
+PHASE_2_DOCUMENTATION.md
+```
+
+### Authentication Middleware Responsibilities
+
+File:
+
+```text
+src/middleware/authenticate.ts
+```
+
+Current request flow:
+
+```text
+read Authorization header
+  -> require Bearer <token>
+  -> verify JWT signature and expiry
+  -> validate decoded payload fields
+  -> try auth user cache by user id
+  -> on cache miss, load users row from Supabase/Postgres
+  -> if company, load companies row for verification_status
+  -> reject suspended/deleted users
+  -> attach typed req.user
+  -> call next()
+```
+
+Why this matters for KUPC:
+
+Authentication is the single gate in front of student profiles, company dashboards, jobs, swiping, matches, chat, resumes, admin actions, and future analytics. Controllers should not re-parse tokens or guess who the user is. They should receive a request that has already been authenticated and can safely read `req.user`.
+
+### Authorization Header Handling
+
+The middleware expects:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+Failure behavior:
+
+```text
+missing or malformed Bearer token -> HTTP 401, code MISSING_TOKEN
+```
+
+Why this matters for KUPC:
+
+The frontend and API clients need one standard way to send access tokens. Returning `MISSING_TOKEN` makes it clear that the request did not reach authentication because no usable credential was provided. This is different from an invalid token, where a credential was provided but failed verification.
+
+### JWT Signature, Expiry, And Payload Validation
+
+File:
+
+```text
+src/utils/jwt.ts
+```
+
+The JWT helper now verifies:
+
+- The token signature using `JWT_SECRET`.
+- The token expiry configured through `JWT_EXPIRES_IN`.
+- `sub` exists and is a string.
+- `email` exists and is a string.
+- `role` exists and is one of `STUDENT`, `COMPANY`, or `ADMIN`.
+- `sessionId` exists and is a string.
+
+Failure behavior:
+
+```text
+expired token -> HTTP 401, code TOKEN_EXPIRED
+invalid signature or malformed payload -> HTTP 401, code INVALID_TOKEN
+```
+
+Why this matters for KUPC:
+
+JWT verification should not stop at "the signature is valid." Protected routes also need the token to carry the exact fields the backend expects. Validating the payload shape prevents malformed or incomplete tokens from producing confusing runtime behavior deeper in controllers and services.
+
+### User Identity Cache
+
+File:
+
+```text
+src/middleware/authUserCache.ts
+```
+
+Current implementation:
+
+```text
+in-memory Map
+short TTL
+cache key = user id
+database fallback on cache miss
+```
+
+Environment variable:
+
+```env
+AUTH_USER_CACHE_TTL_SECONDS=30
+```
+
+Why this matters for KUPC:
+
+Every protected request needs user identity. Without caching, a busy dashboard, chat page, or swipe screen can repeatedly hit the database just to resolve the same user. A short TTL reduces repeated lookups while keeping account-status changes reasonably fresh.
+
+Production note:
+
+The Phase 2 PDF calls for Redis as the short-TTL cache. This codebase does not yet include Redis infrastructure or a Redis client dependency, so Milestone 5 introduces a cache abstraction with an in-memory backend. The route and middleware code now use the abstraction, which means the implementation can be swapped to Redis later without changing protected route handlers.
+
+Security note:
+
+Because user identity is cached briefly, account suspension or company verification changes may take up to `AUTH_USER_CACHE_TTL_SECONDS` to be reflected for already cached users. Keep this TTL short. For production, Redis plus explicit cache invalidation on admin account-status changes is recommended.
+
+### Database Fallback
+
+On cache miss, the middleware loads:
+
+```text
+users.id
+users.email
+users.role
+users.email_verified
+users.status
+```
+
+For company users, it also loads:
+
+```text
+companies.verification_status
+```
+
+Why this matters for KUPC:
+
+The JWT proves that a token was signed by the backend, but the database still controls current account state. This is what lets the platform block suspended or deleted users even if their access token has not expired yet.
+
+### Suspended And Deleted Account Blocking
+
+If the resolved user has:
+
+```text
+status != active
+```
+
+the middleware returns:
+
+```text
+HTTP 403
+code: ACCOUNT_SUSPENDED
+```
+
+Why this matters for KUPC:
+
+Access tokens are stateless and may remain cryptographically valid until their short expiry. Checking account status on every authenticated request gives admins a way to cut off suspended or deleted accounts before token expiry, which is important for moderation and platform safety.
+
+### Typed req.user
+
+Files:
+
+```text
+src/types/express.d.ts
+src/modules/auth/auth.types.ts
+```
+
+Current `req.user` shape:
+
+```ts
+{
+  id: string;
+  sessionId: string;
+  role: Role;
+  email: string;
+  emailVerified: boolean;
+  status: 'active' | 'suspended' | 'deleted';
+  verificationStatus?: 'pending' | 'approved' | 'rejected';
+}
+```
+
+Why this matters for KUPC:
+
+Controllers and later modules can access identity safely without `any` casts. Student routes can use `req.user.id` as the owner id. Company routes can check `req.user.verificationStatus`. Logout and refresh-token work can use `req.user.sessionId` to connect requests back to a concrete login session.
+
+### Protecting Routes
+
+Milestone 5 is already used by the company verification document placeholder:
+
+```text
+POST /api/v1/auth/company/verification-documents
+  -> authenticate
+  -> authorize(Role.COMPANY)
+  -> validate(companyVerificationDocumentSchema)
+  -> authController.createCompanyVerificationDocument
+```
+
+Example pattern for future routes:
+
+```ts
+router.get('/profile', authenticate, profileController.getMyProfile);
+```
+
+Why this matters for KUPC:
+
+Every private feature should use the same authentication entry point. That keeps route behavior predictable and prevents controller-level security drift as the project grows into profiles, resumes, jobs, swipes, matches, chat, notifications, and admin tools.
+
+### Error Codes Used By Milestone 5
+
+Current authentication middleware error codes:
+
+```text
+MISSING_TOKEN
+INVALID_TOKEN
+TOKEN_EXPIRED
+ACCOUNT_SUSPENDED
+```
+
+Why this matters for KUPC:
+
+The frontend can respond differently to each failure. `MISSING_TOKEN` can redirect to login, `TOKEN_EXPIRED` can trigger refresh-token rotation once Milestone 8 is built, `INVALID_TOKEN` can force a clean sign-out, and `ACCOUNT_SUSPENDED` can show an account-status message.
+
+### Milestone 5 Caveats
+
+Current caveats:
+
+- Redis is not wired yet; the cache abstraction currently uses an in-memory TTL cache.
+- Session existence is not checked during `authenticate` yet; that belongs with refresh-token rotation and logout/session revocation work.
+- Production tests for token expiry, malformed tokens, suspended users, and cache behavior are still pending.
+
+Why this matters for KUPC:
+
+Milestone 5 now gives the backend a usable protected-route gate. The remaining caveats are infrastructure and hardening work that should be addressed before production, especially Redis-backed cache invalidation and session-aware logout behavior.
 
 ## Current Verification
 

@@ -14,6 +14,7 @@ export const config = {
     otpExpiresIn: env.OTP_EXPIRES_IN,
     otpMaxAttempts: env.OTP_MAX_ATTEMPTS,
     kuEmailDomain: env.KU_EMAIL_DOMAIN,
+    userCacheTtlSeconds: env.AUTH_USER_CACHE_TTL_SECONDS,
     adminPasswordLoginEnabled: env.ADMIN_PASSWORD_LOGIN_ENABLED
   },
   cors: {
