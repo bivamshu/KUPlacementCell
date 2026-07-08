@@ -3,6 +3,7 @@ import { config } from '../config/config';
 import { authRateLimiter } from '../middleware/rateLimiter';
 import { authRouter } from '../modules/auth';
 import adminRouter from './admin';
+import jobsRouter from './jobs';
 import rbacRouter from './rbac';
 import studentRouter from './student';
 import { successResponse } from '../utils/apiResponse';
@@ -24,6 +25,7 @@ router.get('/', (req, res) => {
 router.use('/auth', authRateLimiter, authRouter);
 router.use('/student', studentRouter);
 router.use('/admin', adminRouter);
+router.use('/jobs', jobsRouter);
 router.use('/rbac', rbacRouter);
 
 export default router;

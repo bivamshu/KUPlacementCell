@@ -13,3 +13,21 @@ export class AppError extends Error {
     Error.captureStackTrace(this, this.constructor);
   }
 }
+
+export class UnauthorizedError extends AppError {
+  constructor(code: string, message = 'Unauthorized') {
+    super(message, 401, code);
+  }
+}
+
+export class ForbiddenError extends AppError {
+  constructor(code: string, message = 'Forbidden') {
+    super(message, 403, code);
+  }
+}
+
+export class ValidationError extends AppError {
+  constructor(code: string, message = 'Request validation failed') {
+    super(message, 400, code);
+  }
+}

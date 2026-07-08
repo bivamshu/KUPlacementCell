@@ -1,6 +1,6 @@
 import { RequestHandler } from 'express';
 import { successResponse } from '../../utils/apiResponse';
-import { AppError } from '../../utils/AppError';
+import { AppError, UnauthorizedError } from '../../utils/AppError';
 import { authService } from './auth.service';
 import { AUTH_ERROR_CODES } from './auth.constants';
 
@@ -105,11 +105,24 @@ export const authController = {
   logout: (async (req, res, next) => {
     try {
       if (!req.user) {
-        throw new AppError('Missing token', 401, AUTH_ERROR_CODES.MISSING_TOKEN);
+        throw new UnauthorizedError(AUTH_ERROR_CODES.MISSING_TOKEN, 'Missing token');
       }
 
-      const result = await authService.logout(req.user);
+      const result = await authService.logout(req.user, req.body);
       res.status(200).json(successResponse(result, 'Logout successful'));
+    } catch (error) {
+      next(error);
+    }
+  }) satisfies RequestHandler,
+
+  logoutAll: (async (req, res, next) => {
+    try {
+      if (!req.user) {
+        throw new UnauthorizedError(AUTH_ERROR_CODES.MISSING_TOKEN, 'Missing token');
+      }
+
+      const result = await authService.logoutAll(req.user);
+      res.status(200).json(successResponse(result, 'Logged out of all devices'));
     } catch (error) {
       next(error);
     }

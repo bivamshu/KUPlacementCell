@@ -1,9 +1,11 @@
 import express, { Request, Response } from 'express';
+import swaggerUi from 'swagger-ui-express';
 import { corsMiddleware } from './middleware/cors';
 import { errorHandler } from './middleware/errorHandler';
 import { requestLogger } from './middleware/logger';
 import { notFound } from './middleware/notFound';
 import { securityMiddleware } from './middleware/security';
+import { swaggerSpec } from './config/swagger';
 import apiV1Router from './routes';
 import { successResponse } from './utils/apiResponse';
 
@@ -42,6 +44,9 @@ app.get('/health', (req: Request, res: Response) => {
 
 // Versioned API routes
 app.use('/api/v1', apiV1Router);
+
+// Phase 2 OpenAPI docs (exit checklist: every auth endpoint documented)
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // Convert unmatched routes into a controlled 404 error
 app.use(notFound);

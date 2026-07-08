@@ -59,5 +59,13 @@ export const refreshTokensRepository = {
     if (error) {
       throw error;
     }
+  },
+
+  async revokeAllByUserId(userId: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('refresh_tokens').update({ revoked: true }).eq('user_id', userId);
+
+    if (error) {
+      throw error;
+    }
   }
 };

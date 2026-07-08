@@ -4,13 +4,14 @@ import { companiesRepository } from '../../database/companies.repository';
 import { companyRequestsRepository } from '../../database/companyRequests.repository';
 import { refreshTokensRepository } from '../../database/refreshTokens.repository';
 import { sessionsRepository } from '../../database/sessions.repository';
-import { studentsRepository } from '../../database/students.repository';
 import { studentOtpsRepository } from '../../database/studentOtps.repository';
 import { usersRepository } from '../../database/users.repository';
 import { authUserCache } from '../../middleware/authUserCache';
 import { addSeconds, generateNumericOtp, generateSecureToken, hashToken, parseDurationToSeconds } from '../../utils/auth';
-import { AppError } from '../../utils/AppError';
+import { AppError, UnauthorizedError } from '../../utils/AppError';
+import { sendStudentOtpEmail } from '../../utils/email';
 import { signAccessToken } from '../../utils/jwt';
+import { verifyAdminTotp } from '../../utils/totp';
 import { AUTH_ERROR_CODES, Role } from './auth.constants';
 import { AuthenticatedUser } from './auth.types';
 import {
@@ -21,6 +22,10 @@ import {
   RegisterStudentInput,
   VerifyOtpInput
 } from './auth.validation';
+
+type LogoutInput = {
+  refresh_token: string;
+};
 
 type RequestContext = {
   ipAddress?: string;
@@ -104,9 +109,7 @@ async function issueTokenPair(
 }
 
 async function deliverStudentOtp(email: string, otp: string): Promise<void> {
-  if (env.NODE_ENV !== 'production') {
-    console.log(`Student OTP for ${email}: ${otp}`);
-  }
+  await sendStudentOtpEmail(email, otp);
 }
 
 function mapRegistrationError(error: unknown): AppError {
@@ -171,12 +174,29 @@ export const authService = {
     return user;
   },
 
-  async logout(user: AuthenticatedUser): Promise<{ logged_out: true }> {
+  async logout(user: AuthenticatedUser, input: LogoutInput): Promise<{ logged_out: true }> {
+    const tokenRecord = await refreshTokensRepository.findByHash(hashToken(input.refresh_token));
+
+    if (!tokenRecord || tokenRecord.session_id !== user.sessionId || tokenRecord.revoked) {
+      throw new UnauthorizedError(AUTH_ERROR_CODES.INVALID_TOKEN, 'Invalid refresh token');
+    }
+
     await refreshTokensRepository.revokeBySessionId(user.sessionId);
     await sessionsRepository.deleteById(user.sessionId);
-    authUserCache.delete(user.id);
+    await authUserCache.delete(user.id);
 
     return { logged_out: true };
+  },
+
+  async logoutAll(user: AuthenticatedUser): Promise<{ logged_out_all: true; sessions_revoked: true }> {
+    await refreshTokensRepository.revokeAllByUserId(user.id);
+    await sessionsRepository.deleteAllByUserId(user.id);
+    await authUserCache.delete(user.id);
+
+    return {
+      logged_out_all: true,
+      sessions_revoked: true
+    };
   },
 
   async registerStudent(input: RegisterStudentInput): Promise<{ otp_sent: boolean; expires_in: number }> {
@@ -202,9 +222,9 @@ export const authService = {
     }
 
     try {
-      await usersRepository.createStudentUser({ id: authData.user.id, email });
-      await studentsRepository.create({
+      await usersRepository.registerStudentProfile({
         id: authData.user.id,
+        email,
         kuId: getKuId(email),
         fullName: input.full_name
       });
@@ -297,17 +317,19 @@ export const authService = {
     }
 
     try {
-      await usersRepository.createCompanyUser({
+      await usersRepository.registerCompanyProfile({
         id: authData.user.id,
         email,
+        companyName: input.company_name,
+        website: input.website,
         emailVerified: Boolean(authData.user.email_confirmed_at)
       });
 
-      const company = await companiesRepository.create({
-        id: authData.user.id,
-        companyName: input.company_name,
-        website: input.website
-      });
+      const company = await companiesRepository.findByUserId(authData.user.id);
+
+      if (!company) {
+        throw new AppError('Company registration failed', 500);
+      }
 
       return {
         company_id: company.id,
@@ -346,12 +368,16 @@ export const authService = {
   },
 
   async adminLogin(input: AdminLoginInput, context: RequestContext): Promise<Awaited<ReturnType<typeof issueTokenPair>>> {
-    if (!input.totp_code && !env.ADMIN_PASSWORD_LOGIN_ENABLED) {
-      throw new AppError('Admin TOTP is required', 501, 'ADMIN_TOTP_NOT_CONFIGURED');
-    }
+    if (!env.ADMIN_PASSWORD_LOGIN_ENABLED) {
+      if (!input.totp_code) {
+        throw new AppError('Admin TOTP is required', 401, AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+      }
 
-    if (input.totp_code) {
-      throw new AppError('Admin TOTP verification is not implemented yet', 501, 'ADMIN_TOTP_NOT_CONFIGURED');
+      if (!env.ADMIN_TOTP_SECRET || !verifyAdminTotp(input.totp_code)) {
+        throw new AppError('Invalid admin TOTP', 401, AUTH_ERROR_CODES.INVALID_CREDENTIALS);
+      }
+    } else if (input.totp_code && env.ADMIN_TOTP_SECRET && !verifyAdminTotp(input.totp_code)) {
+      throw new AppError('Invalid admin TOTP', 401, AUTH_ERROR_CODES.INVALID_CREDENTIALS);
     }
 
     return loginWithPassword(input, context, [Role.ADMIN]);

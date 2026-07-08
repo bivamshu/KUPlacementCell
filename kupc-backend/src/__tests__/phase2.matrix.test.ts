@@ -22,9 +22,18 @@ jest.mock('../config/env', () => {
 });
 
 import app from '../app';
+import { companiesRepository } from '../database/companies.repository';
 import { requireVerifiedCompany } from '../middleware/requireVerifiedCompany';
 import { AUTH_ERROR_CODES, Role } from '../modules/auth';
-import { AppError } from '../utils/AppError';
+import { ForbiddenError } from '../utils/AppError';
+
+jest.mock('../database/companies.repository', () => {
+  return {
+    companiesRepository: {
+      findByUserId: jest.fn()
+    }
+  };
+});
 
 async function runMiddleware(
   handler: typeof requireVerifiedCompany,
@@ -37,11 +46,11 @@ async function runMiddleware(
     status: 'active' | 'suspended' | 'deleted';
     verificationStatus?: 'pending' | 'approved' | 'rejected';
   }
-): Promise<AppError | undefined> {
+): Promise<ForbiddenError | undefined> {
   return new Promise((resolve) => {
     const req = { user } as any;
     handler(req, {} as any, (err?: unknown) => {
-      resolve(err as AppError | undefined);
+      resolve(err as ForbiddenError | undefined);
     });
   });
 }
@@ -125,7 +134,19 @@ describe('Milestone 11 - Phase 2 testing matrix', () => {
   });
 
   describe('Exit checklist: pending company gate', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+    });
+
     it('requireVerifiedCompany blocks pending companies -> 403 PENDING_VERIFICATION', async () => {
+      (companiesRepository.findByUserId as jest.Mock).mockResolvedValue({
+        id: 'company-id',
+        company_name: 'Pending Co',
+        website: null,
+        verification_status: 'pending',
+        verified_at: null
+      });
+
       const err = await runMiddleware(requireVerifiedCompany, {
         id: 'company-id',
         sessionId: 'sess-1',
@@ -136,12 +157,20 @@ describe('Milestone 11 - Phase 2 testing matrix', () => {
         verificationStatus: 'pending'
       });
 
-      expect(err).toBeInstanceOf(AppError);
+      expect(err).toBeInstanceOf(ForbiddenError);
       expect(err?.statusCode).toBe(403);
       expect(err?.code).toBe(AUTH_ERROR_CODES.PENDING_VERIFICATION);
     });
 
     it('requireVerifiedCompany allows approved companies', async () => {
+      (companiesRepository.findByUserId as jest.Mock).mockResolvedValue({
+        id: 'company-id',
+        company_name: 'Approved Co',
+        website: 'https://approved.example',
+        verification_status: 'approved',
+        verified_at: new Date().toISOString()
+      });
+
       const err = await runMiddleware(requireVerifiedCompany, {
         id: 'company-id',
         sessionId: 'sess-1',
@@ -165,7 +194,7 @@ describe('Milestone 11 - Phase 2 testing matrix', () => {
         status: 'active'
       });
 
-      expect(err).toBeInstanceOf(AppError);
+      expect(err).toBeInstanceOf(ForbiddenError);
       expect(err?.code).toBe(AUTH_ERROR_CODES.INSUFFICIENT_ROLE);
     });
   });

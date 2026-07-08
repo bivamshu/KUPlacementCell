@@ -86,6 +86,14 @@ export const refreshTokensSchema = z.object({
     .strip()
 });
 
+export const logoutSchema = z.object({
+  body: z
+    .object({
+      refresh_token: z.string().min(1)
+    })
+    .strip()
+});
+
 export type RegisterStudentInput = z.infer<typeof registerStudentSchema>['body'];
 export type RegisterCompanyInput = z.infer<typeof registerCompanySchema>['body'];
 export type CompanyVerificationDocumentInput = z.infer<typeof companyVerificationDocumentSchema>['body'];
@@ -93,3 +101,4 @@ export type VerifyOtpInput = z.infer<typeof verifyOtpSchema>['body'];
 export type LoginInput = z.infer<typeof loginSchema>['body'];
 export type AdminLoginInput = z.infer<typeof adminLoginSchema>['body'];
 export type RefreshTokensInput = z.infer<typeof refreshTokensSchema>['body'];
+export type LogoutInput = z.infer<typeof logoutSchema>['body'];

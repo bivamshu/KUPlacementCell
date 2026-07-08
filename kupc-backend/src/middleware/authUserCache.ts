@@ -1,43 +1,22 @@
-import { config } from '../config/config';
 import { AuthenticatedUser } from '../modules/auth';
+import { authUserCacheStore } from './authUserCacheStore';
 
 type CachedUserIdentity = Omit<AuthenticatedUser, 'sessionId'>;
 
-type CacheEntry = {
-  user: CachedUserIdentity;
-  expiresAt: number;
-};
-
-const cache = new Map<string, CacheEntry>();
-
 export const authUserCache = {
-  get(userId: string): CachedUserIdentity | null {
-    const entry = cache.get(userId);
-
-    if (!entry) {
-      return null;
-    }
-
-    if (entry.expiresAt <= Date.now()) {
-      cache.delete(userId);
-      return null;
-    }
-
-    return entry.user;
+  async get(userId: string): Promise<CachedUserIdentity | null> {
+    return authUserCacheStore.get(userId);
   },
 
-  set(user: CachedUserIdentity): void {
-    cache.set(user.id, {
-      user,
-      expiresAt: Date.now() + config.auth.userCacheTtlSeconds * 1000
-    });
+  async set(user: CachedUserIdentity): Promise<void> {
+    await authUserCacheStore.set(user);
   },
 
-  delete(userId: string): void {
-    cache.delete(userId);
+  async delete(userId: string): Promise<void> {
+    await authUserCacheStore.delete(userId);
   },
 
-  clear(): void {
-    cache.clear();
+  async clear(): Promise<void> {
+    await authUserCacheStore.clear();
   }
 };

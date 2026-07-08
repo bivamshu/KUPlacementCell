@@ -1,9 +1,10 @@
 import { RequestHandler } from 'express';
 import { TokenExpiredError } from 'jsonwebtoken';
 import { companiesRepository } from '../database/companies.repository';
+import { sessionsRepository } from '../database/sessions.repository';
 import { usersRepository } from '../database/users.repository';
 import { AUTH_ERROR_CODES, AuthenticatedUser, Role } from '../modules/auth';
-import { AppError } from '../utils/AppError';
+import { ForbiddenError, UnauthorizedError } from '../utils/AppError';
 import { verifyAccessToken } from '../utils/jwt';
 import { authUserCache } from './authUserCache';
 
@@ -17,7 +18,17 @@ function getBearerToken(authHeader?: string): string | null {
 }
 
 async function loadUserIdentity(userId: string, sessionId: string): Promise<AuthenticatedUser | null> {
-  const cachedUser = authUserCache.get(userId);
+  const session = await sessionsRepository.findById(sessionId);
+
+  if (!session || session.user_id !== userId) {
+    return null;
+  }
+
+  if (new Date(session.expires_at).getTime() <= Date.now()) {
+    return null;
+  }
+
+  const cachedUser = await authUserCache.get(userId);
 
   if (cachedUser) {
     return {
@@ -33,7 +44,7 @@ async function loadUserIdentity(userId: string, sessionId: string): Promise<Auth
   }
 
   if (user.status !== 'active') {
-    throw new AppError('Account is suspended', 403, AUTH_ERROR_CODES.ACCOUNT_SUSPENDED);
+    throw new ForbiddenError(AUTH_ERROR_CODES.ACCOUNT_SUSPENDED, 'Account is suspended');
   }
 
   const company = user.role === Role.COMPANY ? await companiesRepository.findByUserId(user.id) : null;
@@ -46,7 +57,7 @@ async function loadUserIdentity(userId: string, sessionId: string): Promise<Auth
     verificationStatus: company?.verification_status
   };
 
-  authUserCache.set(identity);
+  await authUserCache.set(identity);
 
   return {
     ...identity,
@@ -59,7 +70,7 @@ export const authenticate: RequestHandler = async (req, res, next) => {
     const token = getBearerToken(req.get('authorization'));
 
     if (!token) {
-      next(new AppError('Missing token', 401, AUTH_ERROR_CODES.MISSING_TOKEN));
+      next(new UnauthorizedError(AUTH_ERROR_CODES.MISSING_TOKEN, 'Missing token'));
       return;
     }
 
@@ -67,23 +78,23 @@ export const authenticate: RequestHandler = async (req, res, next) => {
     const user = await loadUserIdentity(payload.sub, payload.sessionId);
 
     if (!user) {
-      next(new AppError('Invalid token', 401, AUTH_ERROR_CODES.INVALID_TOKEN));
+      next(new UnauthorizedError(AUTH_ERROR_CODES.INVALID_TOKEN, 'Invalid token'));
       return;
     }
 
     req.user = user;
     next();
   } catch (error) {
-    if (error instanceof AppError) {
+    if (error instanceof ForbiddenError || error instanceof UnauthorizedError) {
       next(error);
       return;
     }
 
     if (error instanceof TokenExpiredError) {
-      next(new AppError('Token expired', 401, AUTH_ERROR_CODES.TOKEN_EXPIRED));
+      next(new UnauthorizedError(AUTH_ERROR_CODES.TOKEN_EXPIRED, 'Token expired'));
       return;
     }
 
-    next(new AppError('Invalid token', 401, AUTH_ERROR_CODES.INVALID_TOKEN));
+    next(new UnauthorizedError(AUTH_ERROR_CODES.INVALID_TOKEN, 'Invalid token'));
   }
 };

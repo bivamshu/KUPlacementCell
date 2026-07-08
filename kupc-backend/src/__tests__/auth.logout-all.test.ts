@@ -24,8 +24,7 @@ jest.mock('../config/env', () => {
 jest.mock('../database/refreshTokens.repository', () => {
   return {
     refreshTokensRepository: {
-      findByHash: jest.fn(),
-      revokeBySessionId: jest.fn()
+      revokeAllByUserId: jest.fn()
     }
   };
 });
@@ -33,7 +32,7 @@ jest.mock('../database/refreshTokens.repository', () => {
 jest.mock('../database/sessions.repository', () => {
   return {
     sessionsRepository: {
-      deleteById: jest.fn()
+      deleteAllByUserId: jest.fn()
     }
   };
 });
@@ -76,48 +75,27 @@ jest.mock('../middleware/authenticate', () => {
   };
 });
 
-describe('Milestone 9 - POST /api/v1/auth/logout', () => {
+describe('Phase 2 - POST /api/v1/auth/logout-all', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (refreshTokensRepository.findByHash as jest.Mock).mockResolvedValue({
-      id: 'rt-1',
-      user_id: 'test-user-id',
-      session_id: 'test-session-id',
-      token_hash: 'hash',
-      expires_at: new Date(Date.now() + 60_000).toISOString(),
-      revoked: false,
-      created_at: new Date().toISOString()
-    });
-    (refreshTokensRepository.revokeBySessionId as jest.Mock).mockResolvedValue(undefined);
-    (sessionsRepository.deleteById as jest.Mock).mockResolvedValue(undefined);
+    (refreshTokensRepository.revokeAllByUserId as jest.Mock).mockResolvedValue(undefined);
+    (sessionsRepository.deleteAllByUserId as jest.Mock).mockResolvedValue(undefined);
     (authUserCache.delete as jest.Mock).mockResolvedValue(undefined);
   });
 
   it('Missing token -> 401 MISSING_TOKEN', async () => {
-    const res = await request(app).post('/api/v1/auth/logout').send({ refresh_token: 'token' });
+    const res = await request(app).post('/api/v1/auth/logout-all');
     expect(res.status).toBe(401);
     expect(res.body?.error?.code).toBe(AUTH_ERROR_CODES.MISSING_TOKEN);
   });
 
-  it('Missing refresh_token body -> 400 VALIDATION_ERROR', async () => {
-    const res = await request(app).post('/api/v1/auth/logout').set('x-test-auth', '1').send({});
-    expect(res.status).toBe(400);
-    expect(res.body?.error?.code).toBe('VALIDATION_ERROR');
-  });
-
-  it('Valid token + refresh_token -> 200 and revokes session refresh tokens + deletes session', async () => {
-    const res = await request(app)
-      .post('/api/v1/auth/logout')
-      .set('x-test-auth', '1')
-      .send({ refresh_token: 'refresh-token-value' });
+  it('Valid token -> 200 and revokes all sessions for user', async () => {
+    const res = await request(app).post('/api/v1/auth/logout-all').set('x-test-auth', '1');
 
     expect(res.status).toBe(200);
-    expect(res.body?.success).toBe(true);
-    expect(res.body?.data?.logged_out).toBe(true);
-
-    expect(refreshTokensRepository.findByHash).toHaveBeenCalled();
-    expect(refreshTokensRepository.revokeBySessionId).toHaveBeenCalledWith('test-session-id');
-    expect(sessionsRepository.deleteById).toHaveBeenCalledWith('test-session-id');
+    expect(res.body?.data?.logged_out_all).toBe(true);
+    expect(refreshTokensRepository.revokeAllByUserId).toHaveBeenCalledWith('test-user-id');
+    expect(sessionsRepository.deleteAllByUserId).toHaveBeenCalledWith('test-user-id');
     expect(authUserCache.delete).toHaveBeenCalledWith('test-user-id');
   });
 });

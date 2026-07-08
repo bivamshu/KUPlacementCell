@@ -88,5 +88,42 @@ export const usersRepository = {
 
   async markEmailVerified(id: string): Promise<UserRecord> {
     return this.updateEmailVerified(id, true);
+  },
+
+  async registerStudentProfile(input: { id: string; email: string; kuId: string; fullName: string }): Promise<UserRecord> {
+    const { data, error } = await supabaseAdmin.rpc('register_student_profile', {
+      p_user_id: input.id,
+      p_email: input.email,
+      p_ku_id: input.kuId,
+      p_full_name: input.fullName
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    return data as UserRecord;
+  },
+
+  async registerCompanyProfile(input: {
+    id: string;
+    email: string;
+    companyName: string;
+    website?: string;
+    emailVerified?: boolean;
+  }): Promise<UserRecord> {
+    const { data, error } = await supabaseAdmin.rpc('register_company_profile', {
+      p_user_id: input.id,
+      p_email: input.email,
+      p_company_name: input.companyName,
+      p_website: input.website ?? null,
+      p_email_verified: input.emailVerified ?? false
+    });
+
+    if (error) {
+      throw error;
+    }
+
+    return data as UserRecord;
   }
 };

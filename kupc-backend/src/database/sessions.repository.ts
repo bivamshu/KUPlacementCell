@@ -35,5 +35,23 @@ export const sessionsRepository = {
     if (error) {
       throw error;
     }
+  },
+
+  async findById(id: string): Promise<SessionRecord | null> {
+    const { data, error } = await supabaseAdmin.from('sessions').select('*').eq('id', id).maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    return data;
+  },
+
+  async deleteAllByUserId(userId: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('sessions').delete().eq('user_id', userId);
+
+    if (error) {
+      throw error;
+    }
   }
 };

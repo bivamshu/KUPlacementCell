@@ -1,7 +1,7 @@
 import { RequestHandler } from 'express';
 import { ZodSchema } from 'zod';
 import { AUTH_ERROR_CODES } from '../modules/auth';
-import { AppError } from '../utils/AppError';
+import { ValidationError } from '../utils/AppError';
 
 type RequestSchemaOutput = {
   body?: unknown;
@@ -18,10 +18,12 @@ export const validate = (schema: ZodSchema<RequestSchemaOutput>): RequestHandler
     });
 
     if (!result.success) {
-      const hasKuEmailDomainError = result.error.issues.some((issue) => issue.message === 'Email must use the KU institutional domain');
+      const hasKuEmailDomainError = result.error.issues.some(
+        (issue) => issue.message === 'Email must use the KU institutional domain'
+      );
       const code = hasKuEmailDomainError ? AUTH_ERROR_CODES.INVALID_EMAIL_DOMAIN : 'VALIDATION_ERROR';
 
-      next(new AppError('Request validation failed', 400, code));
+      next(new ValidationError(code, 'Request validation failed'));
       return;
     }
 
@@ -29,7 +31,6 @@ export const validate = (schema: ZodSchema<RequestSchemaOutput>): RequestHandler
       req.body = result.data.body;
     }
 
-    // Express 5 exposes some request properties via accessors; mutate objects instead of reassigning.
     if (result.data.query !== undefined && typeof req.query === 'object' && req.query !== null) {
       Object.assign(req.query as any, result.data.query);
     }

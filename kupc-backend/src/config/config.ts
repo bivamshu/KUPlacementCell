@@ -15,7 +15,9 @@ export const config = {
     otpMaxAttempts: env.OTP_MAX_ATTEMPTS,
     kuEmailDomain: env.KU_EMAIL_DOMAIN,
     userCacheTtlSeconds: env.AUTH_USER_CACHE_TTL_SECONDS,
-    adminPasswordLoginEnabled: env.ADMIN_PASSWORD_LOGIN_ENABLED
+    adminPasswordLoginEnabled: env.ADMIN_PASSWORD_LOGIN_ENABLED,
+    redisUrl: env.REDIS_URL,
+    otpEmailEnabled: env.OTP_EMAIL_ENABLED
   },
   cors: {
     allowedOrigins: ['http://localhost:5173']
