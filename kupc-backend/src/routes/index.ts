@@ -2,7 +2,9 @@ import { Router } from 'express';
 import { config } from '../config/config';
 import { authRateLimiter } from '../middleware/rateLimiter';
 import { authRouter } from '../modules/auth';
+import adminRouter from './admin';
 import rbacRouter from './rbac';
+import studentRouter from './student';
 import { successResponse } from '../utils/apiResponse';
 
 const router = Router();
@@ -20,6 +22,8 @@ router.get('/', (req, res) => {
 });
 
 router.use('/auth', authRateLimiter, authRouter);
+router.use('/student', studentRouter);
+router.use('/admin', adminRouter);
 router.use('/rbac', rbacRouter);
 
 export default router;

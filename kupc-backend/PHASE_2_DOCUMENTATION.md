@@ -1577,14 +1577,11 @@ The TypeScript check had to be run outside the sandbox because pnpm symlinked pa
 
 The following are still pending:
 
-- Student dashboard smoke route.
-- Admin dashboard smoke route.
 - Full repository coverage for all later milestones.
 - Full typed auth error subclasses.
 - Production TOTP verification for admin login.
 - Production OTP email delivery.
 - True transaction/RPC for student and company registration.
-- Full test coverage for all milestones (RBAC, `/me`, refresh rotation, and logout tests are implemented in Milestones 6–9).
 
 ## Immediate Blockers
 
@@ -1734,8 +1731,6 @@ Recommended order from here:
 2. Replace development OTP console delivery with a real email provider or Supabase email OTP integration.
 3. Add registration RPCs for true transaction behavior.
 4. Implement production admin TOTP enrollment and verification.
-5. Add protected student and admin smoke-test endpoints.
-6. Add tests/manual verification for the Phase 2 matrix.
 
 ## Exit Checklist For Full Phase 2
 
@@ -1987,3 +1982,114 @@ Cases covered:
 
 - No token → 401 `MISSING_TOKEN`
 - Valid token → 200, revokes session refresh tokens, deletes session, clears user cache
+
+## Milestone 10 — Protected Student & Admin Smoke-Test Endpoints (Completed)
+
+Milestone 10 adds first-class protected dashboard smoke routes for student and admin domains. These are separate from the RBAC verification routes in Milestone 6 and provide stable integration targets for frontend/manual testing.
+
+### Routes
+
+```text
+GET /api/v1/student/dashboard (STUDENT only)
+GET /api/v1/admin/dashboard   (ADMIN only)
+```
+
+### Behavior
+
+Both routes use the standard protected-route stack:
+
+```text
+Request -> authenticate -> authorize(Role.<STUDENT|ADMIN>) -> handler
+```
+
+Responses:
+
+- Unauthenticated → HTTP 401, code `MISSING_TOKEN`
+- Wrong role → HTTP 403, code `INSUFFICIENT_ROLE`
+- Correct role → HTTP 200 with `{ ok: true, role: <role> }`
+
+### Files
+
+```text
+src/routes/student.ts
+src/routes/admin.ts
+src/routes/index.ts
+```
+
+### Relationship To Milestone 6 RBAC Routes
+
+Milestone 6 RBAC routes under `/api/v1/rbac/*` remain the middleware verification harness. Milestone 10 routes mirror that behavior under domain-specific prefixes (`/student`, `/admin`) that future student/admin modules can extend.
+
+### Test Cases (Automated)
+
+Test file:
+
+```text
+src/__tests__/smoke.dashboards.test.ts
+```
+
+Cases covered:
+
+- Student dashboard: no token → 401 `MISSING_TOKEN`
+- Student dashboard: ADMIN token → 403 `INSUFFICIENT_ROLE`
+- Student dashboard: STUDENT token → 200
+- Admin dashboard: no token → 401 `MISSING_TOKEN`
+- Admin dashboard: STUDENT token → 403 `INSUFFICIENT_ROLE`
+- Admin dashboard: ADMIN token → 200
+
+## Milestone 11 — Phase 2 Testing Matrix (Completed)
+
+Milestone 11 adds automated coverage mapped to the Phase 2 exit checklist, plus a repeatable verification command for TypeScript.
+
+### Automated Matrix Test File
+
+```text
+src/__tests__/phase2.matrix.test.ts
+```
+
+### Matrix Coverage (Exit Checklist Mapping)
+
+| Exit checklist item | Automated coverage |
+| --- | --- |
+| All auth endpoints validate request bodies with Zod | Matrix validation tests for student register, company register, login, admin login, verify-otp |
+| Student KU email validation works | Non-KU email returns `INVALID_EMAIL_DOMAIN` |
+| Admin login route is separate from normal login | Both `/login` and `/admin/login` are mounted and validated |
+| Pending companies blocked from restricted actions | `requireVerifiedCompany` returns `PENDING_VERIFICATION` for pending companies |
+| Refresh tokens require valid input | Missing refresh token returns `INVALID_TOKEN` |
+| Central error handler returns stable auth error codes | Error envelope includes `success: false`, `error.code`, `error.statusCode` |
+| RBAC / `/me` / refresh / logout / smoke dashboards | Covered in Milestones 6–10 test files |
+
+### Related Test Suites (Milestones 6–10)
+
+```text
+src/__tests__/rbac.test.ts
+src/__tests__/auth.me.test.ts
+src/__tests__/auth.refresh.test.ts
+src/__tests__/auth.logout.test.ts
+src/__tests__/smoke.dashboards.test.ts
+```
+
+### Verification Commands
+
+```bash
+npm test
+npm run typecheck
+```
+
+`npm test` runs the full automated matrix (Milestones 6–11). `npm run typecheck` runs `tsc --noEmit`.
+
+### Manual Verification (when Supabase is configured)
+
+Use a real `.env` and Supabase tables to manually verify flows that require live Auth/DB integration:
+
+1. Student register → OTP verify → login → `GET /me` → refresh → logout
+2. Company register (`verification_status = pending`) → login → submit verification document
+3. Admin login via `/admin/login` (local flag only)
+4. Wrong-role access to `/student/dashboard`, `/admin/dashboard`, and `/rbac/*` routes
+
+Items still requiring production infrastructure (not part of this matrix automation):
+
+- Production OTP email delivery
+- Production admin TOTP verification
+- Database migrations in-repo
+- Redis-backed auth user cache invalidation
