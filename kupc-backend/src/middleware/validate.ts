@@ -25,9 +25,18 @@ export const validate = (schema: ZodSchema<RequestSchemaOutput>): RequestHandler
       return;
     }
 
-    req.body = result.data.body ?? req.body;
-    req.query = (result.data.query ?? req.query) as typeof req.query;
-    req.params = (result.data.params ?? req.params) as typeof req.params;
+    if (result.data.body !== undefined) {
+      req.body = result.data.body;
+    }
+
+    // Express 5 exposes some request properties via accessors; mutate objects instead of reassigning.
+    if (result.data.query !== undefined && typeof req.query === 'object' && req.query !== null) {
+      Object.assign(req.query as any, result.data.query);
+    }
+
+    if (result.data.params !== undefined && typeof req.params === 'object' && req.params !== null) {
+      Object.assign(req.params as any, result.data.params);
+    }
 
     next();
   };

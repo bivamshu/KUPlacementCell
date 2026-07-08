@@ -7,10 +7,12 @@ import { sessionsRepository } from '../../database/sessions.repository';
 import { studentsRepository } from '../../database/students.repository';
 import { studentOtpsRepository } from '../../database/studentOtps.repository';
 import { usersRepository } from '../../database/users.repository';
+import { authUserCache } from '../../middleware/authUserCache';
 import { addSeconds, generateNumericOtp, generateSecureToken, hashToken, parseDurationToSeconds } from '../../utils/auth';
 import { AppError } from '../../utils/AppError';
 import { signAccessToken } from '../../utils/jwt';
 import { AUTH_ERROR_CODES, Role } from './auth.constants';
+import { AuthenticatedUser } from './auth.types';
 import {
   AdminLoginInput,
   CompanyVerificationDocumentInput,
@@ -165,6 +167,18 @@ async function loginWithPassword(
 }
 
 export const authService = {
+  async getMe(user: AuthenticatedUser): Promise<AuthenticatedUser> {
+    return user;
+  },
+
+  async logout(user: AuthenticatedUser): Promise<{ logged_out: true }> {
+    await refreshTokensRepository.revokeBySessionId(user.sessionId);
+    await sessionsRepository.deleteById(user.sessionId);
+    authUserCache.delete(user.id);
+
+    return { logged_out: true };
+  },
+
   async registerStudent(input: RegisterStudentInput): Promise<{ otp_sent: boolean; expires_in: number }> {
     const email = normalizeEmail(input.email);
     const existingUser = await usersRepository.findByEmail(email);
@@ -370,11 +384,16 @@ export const authService = {
       throw new AppError('Invalid refresh token', 401, AUTH_ERROR_CODES.INVALID_TOKEN);
     }
 
-    // 2. BREACH DETECTION: If the token has been consumed or explicitly marked revoked
-    if (tokenRecord.is_revoked || tokenRecord.is_used) {
-      // Wipe the entire parent session and every child token linked to it out of existence
+    // 2. BREACH DETECTION: If the token was already revoked, treat as reuse.
+    if (tokenRecord.revoked) {
+      // Wipe the entire parent session family and every child token linked to it.
+      await refreshTokensRepository.revokeBySessionId(tokenRecord.session_id);
       await sessionsRepository.deleteById(tokenRecord.session_id);
-      throw new AppError('Security breach detected. All sessions revoked.', 401, 'TOKEN_REUSE_DETECTED');
+      throw new AppError(
+        'Security breach detected. All sessions revoked.',
+        401,
+        AUTH_ERROR_CODES.REFRESH_TOKEN_REUSE_DETECTED
+      );
     }
 
     // 3. Verify absolute time expiration thresholds
@@ -388,8 +407,8 @@ export const authService = {
       throw new AppError('User profile no longer active', 403, AUTH_ERROR_CODES.ACCOUNT_SUSPENDED);
     }
 
-    // 5. Invalidate the old token record (Mark it as consumed)
-    await refreshTokensRepository.markAsUsed(tokenRecord.id);
+    // 5. Invalidate the old token record (mark revoked so it can't be reused)
+    await refreshTokensRepository.revokeById(tokenRecord.id);
 
     // 6. Generate a pristine token/session rotation pair
     const refreshExpiresAt = addSeconds(new Date(), getRefreshExpiresInSeconds());

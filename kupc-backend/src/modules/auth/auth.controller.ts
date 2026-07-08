@@ -1,8 +1,23 @@
 import { RequestHandler } from 'express';
 import { successResponse } from '../../utils/apiResponse';
+import { AppError } from '../../utils/AppError';
 import { authService } from './auth.service';
+import { AUTH_ERROR_CODES } from './auth.constants';
 
 export const authController = {
+  me: (async (req, res, next) => {
+    try {
+      if (!req.user) {
+        throw new AppError('Missing token', 401, AUTH_ERROR_CODES.MISSING_TOKEN);
+      }
+
+      const result = await authService.getMe(req.user);
+      res.status(200).json(successResponse(result, 'Authenticated user'));
+    } catch (error) {
+      next(error);
+    }
+  }) satisfies RequestHandler,
+
   registerStudent: (async (req, res, next) => {
     try {
       const result = await authService.registerStudent(req.body);
@@ -82,6 +97,19 @@ export const authController = {
 
       // 3. Dispatch the brand new rotated keypairs back down the transport channel
       res.status(200).json(successResponse(result, 'Tokens refreshed successfully'));
+    } catch (error) {
+      next(error);
+    }
+  }) satisfies RequestHandler,
+
+  logout: (async (req, res, next) => {
+    try {
+      if (!req.user) {
+        throw new AppError('Missing token', 401, AUTH_ERROR_CODES.MISSING_TOKEN);
+      }
+
+      const result = await authService.logout(req.user);
+      res.status(200).json(successResponse(result, 'Logout successful'));
     } catch (error) {
       next(error);
     }

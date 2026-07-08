@@ -27,5 +27,13 @@ export const sessionsRepository = {
     }
 
     return data;
+  },
+
+  async deleteById(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('sessions').delete().eq('id', id);
+
+    if (error) {
+      throw error;
+    }
   }
 };

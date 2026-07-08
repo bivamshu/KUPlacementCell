@@ -29,5 +29,35 @@ export const refreshTokensRepository = {
     }
 
     return data;
+  },
+
+  async findByHash(tokenHash: string): Promise<RefreshTokenRecord | null> {
+    const { data, error } = await supabaseAdmin
+      .from('refresh_tokens')
+      .select('*')
+      .eq('token_hash', tokenHash)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    return data ?? null;
+  },
+
+  async revokeById(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('refresh_tokens').update({ revoked: true }).eq('id', id);
+
+    if (error) {
+      throw error;
+    }
+  },
+
+  async revokeBySessionId(sessionId: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('refresh_tokens').update({ revoked: true }).eq('session_id', sessionId);
+
+    if (error) {
+      throw error;
+    }
   }
 };

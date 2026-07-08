@@ -49,7 +49,7 @@ What was missing before Phase 2:
 
 ## Milestone 1 Completed - Auth Module Foundation
 
-Milestone 1 was implemented as the foundation scaffolding for the auth module. Later milestones now build on these files for student OTP verification, company registration, login, sessions, and JWT issuance. Refresh-token rotation and logout are still pending.
+Milestone 1 was implemented as the foundation scaffolding for the auth module. Later milestones now build on these files for student OTP verification, company registration, login, sessions, JWT issuance, refresh rotation, and logout.
 
 ### Files Added
 
@@ -775,7 +775,7 @@ On successful OTP verification:
 
 Why this matters for KUPC:
 
-The access token powers immediate protected API access. The refresh token supports long-lived login sessions and prepares the backend for Milestone 8 refresh-token rotation.
+The access token powers immediate protected API access. The refresh token supports long-lived login sessions and is rotated on every use via `POST /api/v1/auth/refresh` (Milestone 8).
 
 ### Error Response Shape Updated
 
@@ -1541,19 +1541,19 @@ ACCOUNT_SUSPENDED
 
 Why this matters for KUPC:
 
-The frontend can respond differently to each failure. `MISSING_TOKEN` can redirect to login, `TOKEN_EXPIRED` can trigger refresh-token rotation once Milestone 8 is built, `INVALID_TOKEN` can force a clean sign-out, and `ACCOUNT_SUSPENDED` can show an account-status message.
+The frontend can respond differently to each failure. `MISSING_TOKEN` can redirect to login, `TOKEN_EXPIRED` can trigger refresh-token rotation via `POST /api/v1/auth/refresh`, `INVALID_TOKEN` can force a clean sign-out, and `ACCOUNT_SUSPENDED` can show an account-status message.
 
 ### Milestone 5 Caveats
 
 Current caveats:
 
 - Redis is not wired yet; the cache abstraction currently uses an in-memory TTL cache.
-- Session existence is not checked during `authenticate` yet; that belongs with refresh-token rotation and logout/session revocation work.
+- Session existence is not checked during `authenticate` yet; that belongs with future session-aware hardening.
 - Production tests for token expiry, malformed tokens, suspended users, and cache behavior are still pending.
 
 Why this matters for KUPC:
 
-Milestone 5 now gives the backend a usable protected-route gate. The remaining caveats are infrastructure and hardening work that should be addressed before production, especially Redis-backed cache invalidation and session-aware logout behavior.
+Milestone 5 now gives the backend a usable protected-route gate. The remaining caveats are infrastructure and hardening work that should be addressed before production, especially Redis-backed cache invalidation.
 
 ## Current Verification
 
@@ -1577,9 +1577,6 @@ The TypeScript check had to be run outside the sandbox because pnpm symlinked pa
 
 The following are still pending:
 
-- Refresh token rotation endpoint.
-- Logout.
-- `GET /api/v1/auth/me`.
 - Student dashboard smoke route.
 - Admin dashboard smoke route.
 - Full repository coverage for all later milestones.
@@ -1587,7 +1584,7 @@ The following are still pending:
 - Production TOTP verification for admin login.
 - Production OTP email delivery.
 - True transaction/RPC for student and company registration.
-- Full test coverage for all milestones (RBAC tests are now implemented in Milestone 6).
+- Full test coverage for all milestones (RBAC, `/me`, refresh rotation, and logout tests are implemented in Milestones 6–9).
 
 ## Immediate Blockers
 
@@ -1618,7 +1615,7 @@ Other blockers before completing Phase 2:
   - `refresh_tokens`
   - `student_otps`
   - `company_requests`
-- A test framework is not configured.
+- A test framework should be kept green (`npm test`).
 - Admin TOTP is not implemented yet. Password-only admin login is feature-flagged through `ADMIN_PASSWORD_LOGIN_ENABLED` and must stay disabled outside local/demo use.
 
 ## Phase 2 Data Model Reference
@@ -1737,11 +1734,8 @@ Recommended order from here:
 2. Replace development OTP console delivery with a real email provider or Supabase email OTP integration.
 3. Add registration RPCs for true transaction behavior.
 4. Implement production admin TOTP enrollment and verification.
-5. Build refresh-token rotation.
-6. Build logout.
-7. Build `GET /api/v1/auth/me`.
-8. Add protected student and admin smoke-test endpoints.
-9. Add tests/manual verification for the Phase 2 matrix.
+5. Add protected student and admin smoke-test endpoints.
+6. Add tests/manual verification for the Phase 2 matrix.
 
 ## Exit Checklist For Full Phase 2
 
@@ -1836,3 +1830,160 @@ Cases covered:
 - Company token hitting a STUDENT-only route → 403 `INSUFFICIENT_ROLE`
 - No token at all hitting any protected route → 401 `MISSING_TOKEN`
 - Valid token, correct role → 200 and controller executes
+
+## Milestone 7 — `GET /api/v1/auth/me` (Completed)
+
+Milestone 7 adds a simple authenticated identity endpoint so the frontend can restore session state and render role-aware UI.
+
+### Route
+
+```text
+GET /api/v1/auth/me
+```
+
+### Behavior
+
+- Requires `authenticate`.
+- If the request is unauthenticated, returns:
+  - HTTP 401
+  - code `MISSING_TOKEN`
+- If authenticated, returns:
+  - HTTP 200
+  - `data` containing the current `req.user` payload (see `AuthenticatedUser` type).
+
+### Files
+
+```text
+src/modules/auth/auth.routes.ts
+src/modules/auth/auth.controller.ts
+src/modules/auth/auth.service.ts
+```
+
+### Test Cases (Automated)
+
+Test file:
+
+```text
+src/__tests__/auth.me.test.ts
+```
+
+Cases covered:
+
+- No token → 401 `MISSING_TOKEN`
+- Valid token → 200 and returns user payload
+
+## Milestone 8 — Refresh Token Rotation (Completed)
+
+Milestone 8 adds refresh-token rotation so the frontend can obtain a new access/refresh token pair without forcing a full login.
+
+### Route
+
+```text
+POST /api/v1/auth/refresh
+```
+
+### Request Body
+
+```json
+{
+  "refresh_token": "<opaque refresh token>"
+}
+```
+
+Validated by `refreshTokensSchema` in `src/modules/auth/auth.validation.ts`.
+
+### Behavior
+
+- Looks up the provided refresh token by SHA-256 hash.
+- If missing/unknown → HTTP 401, code `INVALID_TOKEN`.
+- If expired → HTTP 401, code `TOKEN_EXPIRED`.
+- If already revoked (reuse detected):
+  - Revokes all refresh tokens for the session family.
+  - Deletes the parent session row.
+  - Returns HTTP 401, code `REFRESH_TOKEN_REUSE_DETECTED`.
+- On successful rotation:
+  - Marks the old refresh token as revoked.
+  - Creates a new refresh token under the same session.
+  - Issues a new short-lived access JWT.
+  - Returns HTTP 200 with `access_token`, `refresh_token`, and `user`.
+
+### Files
+
+```text
+src/modules/auth/auth.routes.ts
+src/modules/auth/auth.controller.ts
+src/modules/auth/auth.service.ts
+src/modules/auth/auth.validation.ts
+src/database/refreshTokens.repository.ts
+src/database/sessions.repository.ts
+src/middleware/validate.ts
+```
+
+### Repository Methods Added
+
+```text
+refreshTokensRepository.findByHash
+refreshTokensRepository.revokeById
+refreshTokensRepository.revokeBySessionId
+sessionsRepository.deleteById
+```
+
+### Test Cases (Automated)
+
+Test file:
+
+```text
+src/__tests__/auth.refresh.test.ts
+```
+
+Cases covered:
+
+- Valid refresh token → 200 and returns rotated tokens
+- Reused (revoked) refresh token → 401 `REFRESH_TOKEN_REUSE_DETECTED` and session family revoked
+
+## Milestone 9 — Logout (Completed)
+
+Milestone 9 adds session logout so the frontend can end the active login session and invalidate refresh tokens for the current device/session.
+
+### Route
+
+```text
+POST /api/v1/auth/logout
+```
+
+### Behavior
+
+- Requires `authenticate` (Bearer access token).
+- If unauthenticated → HTTP 401, code `MISSING_TOKEN`.
+- Uses `req.user.sessionId` to identify the active login session.
+- On success:
+  - Revokes all refresh tokens linked to the session (`revokeBySessionId`).
+  - Deletes the parent session row (`deleteById`).
+  - Clears the in-memory auth user cache entry for the user.
+  - Returns HTTP 200 with `{ logged_out: true }`.
+
+Note: access JWTs remain valid until natural expiry because JWT verification is stateless. Refresh and future rotation for that session will fail after logout because the session row and refresh tokens are revoked.
+
+### Files
+
+```text
+src/modules/auth/auth.routes.ts
+src/modules/auth/auth.controller.ts
+src/modules/auth/auth.service.ts
+src/database/refreshTokens.repository.ts
+src/database/sessions.repository.ts
+src/middleware/authUserCache.ts
+```
+
+### Test Cases (Automated)
+
+Test file:
+
+```text
+src/__tests__/auth.logout.test.ts
+```
+
+Cases covered:
+
+- No token → 401 `MISSING_TOKEN`
+- Valid token → 200, revokes session refresh tokens, deletes session, clears user cache
