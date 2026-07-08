@@ -1587,7 +1587,7 @@ The following are still pending:
 - Production TOTP verification for admin login.
 - Production OTP email delivery.
 - True transaction/RPC for student and company registration.
-- Tests.
+- Full test coverage for all milestones (RBAC tests are now implemented in Milestone 6).
 
 ## Immediate Blockers
 
@@ -1762,3 +1762,77 @@ Recommended order from here:
 - Supabase service-role key is only used in trusted backend code.
 - `tsc --noEmit` passes.
 - Phase 2 testing matrix passes.
+
+## Milestone 6 — Role-Based Authorization (RBAC) (Completed)
+
+Milestone 6 adds role-based authorization for protected routes using the `Role` enum and the `authorize()` middleware factory.
+
+### Role Enum
+
+```ts
+enum Role {
+  STUDENT = 'STUDENT',
+  COMPANY = 'COMPANY',
+  ADMIN = 'ADMIN',
+}
+```
+
+Source of truth:
+
+- `src/modules/auth/auth.constants.ts`
+
+### authorize() Middleware Factory
+
+File:
+
+```text
+src/middleware/authorize.ts
+```
+
+Behavior:
+
+- If `req.user` is missing (meaning `authenticate` did not run or did not attach identity), return:
+  - HTTP 401
+  - code `MISSING_TOKEN`
+- If `req.user.role` is not within the allowed roles list, return:
+  - HTTP 403
+  - code `INSUFFICIENT_ROLE`
+
+Important ordering rule:
+
+```text
+Request -> authenticate -> authorize(...) -> controller
+```
+
+`authorize()` depends on `req.user`, so it must always run after `authenticate`.
+
+### RBAC Smoke Routes (for verification & tests)
+
+Milestone 6 introduces a minimal set of protected routes used to verify RBAC behavior:
+
+```text
+GET /api/v1/rbac/admin/dashboard   (ADMIN only)
+GET /api/v1/rbac/student/dashboard (STUDENT only)
+GET /api/v1/rbac/company/dashboard (COMPANY only)
+```
+
+File:
+
+```text
+src/routes/rbac.ts
+```
+
+### Test Cases (Automated)
+
+Test file:
+
+```text
+src/__tests__/rbac.test.ts
+```
+
+Cases covered:
+
+- Student token hitting an ADMIN-only route → 403 `INSUFFICIENT_ROLE`
+- Company token hitting a STUDENT-only route → 403 `INSUFFICIENT_ROLE`
+- No token at all hitting any protected route → 401 `MISSING_TOKEN`
+- Valid token, correct role → 200 and controller executes

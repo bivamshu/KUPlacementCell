@@ -67,5 +67,23 @@ export const authController = {
     } catch (error) {
       next(error);
     }
+  }) satisfies RequestHandler,
+
+  refreshTokens: (async (req, res, next) => {
+    try {
+      // 1. Extract the token from the request payload body
+      const providedRefreshToken = req.body.refresh_token;
+
+      // 2. Delegate the rotation tracking algorithm to the service context
+      const result = await authService.refreshTokens(providedRefreshToken, {
+        ipAddress: req.ip,
+        deviceInfo: req.get('user-agent'),
+      });
+
+      // 3. Dispatch the brand new rotated keypairs back down the transport channel
+      res.status(200).json(successResponse(result, 'Tokens refreshed successfully'));
+    } catch (error) {
+      next(error);
+    }
   }) satisfies RequestHandler
 };

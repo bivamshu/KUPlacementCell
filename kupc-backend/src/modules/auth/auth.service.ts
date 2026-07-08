@@ -341,5 +341,89 @@ export const authService = {
     }
 
     return loginWithPassword(input, context, [Role.ADMIN]);
+  },
+
+  async refreshTokens(
+    providedRefreshToken: string, 
+    context: RequestContext
+  ): Promise<{
+    access_token: string;
+    refresh_token: string;
+    user: {
+      id: string;
+      email: string;
+      role: Role;
+      email_verified: boolean;
+      status: string;
+      verification_status?: string;
+    };
+  }> {
+    if (!providedRefreshToken) {
+      throw new AppError('Refresh token required', 401, AUTH_ERROR_CODES.INVALID_TOKEN);
+    }
+
+    const hashedProvidedToken = hashToken(providedRefreshToken);
+
+    // 1. Look up the token record from your refresh tokens repository
+    const tokenRecord = await refreshTokensRepository.findByHash(hashedProvidedToken);
+    if (!tokenRecord) {
+      throw new AppError('Invalid refresh token', 401, AUTH_ERROR_CODES.INVALID_TOKEN);
+    }
+
+    // 2. BREACH DETECTION: If the token has been consumed or explicitly marked revoked
+    if (tokenRecord.is_revoked || tokenRecord.is_used) {
+      // Wipe the entire parent session and every child token linked to it out of existence
+      await sessionsRepository.deleteById(tokenRecord.session_id);
+      throw new AppError('Security breach detected. All sessions revoked.', 401, 'TOKEN_REUSE_DETECTED');
+    }
+
+    // 3. Verify absolute time expiration thresholds
+    if (new Date(tokenRecord.expires_at).getTime() <= Date.now()) {
+      throw new AppError('Refresh token has expired', 401, AUTH_ERROR_CODES.TOKEN_EXPIRED);
+    }
+
+    // 4. Resolve the user domain profile linked to the session
+    const user = await usersRepository.findById(tokenRecord.user_id);
+    if (!user || user.status !== 'active') {
+      throw new AppError('User profile no longer active', 403, AUTH_ERROR_CODES.ACCOUNT_SUSPENDED);
+    }
+
+    // 5. Invalidate the old token record (Mark it as consumed)
+    await refreshTokensRepository.markAsUsed(tokenRecord.id);
+
+    // 6. Generate a pristine token/session rotation pair
+    const refreshExpiresAt = addSeconds(new Date(), getRefreshExpiresInSeconds());
+    const newRefreshToken = generateSecureToken();
+
+    // 7. Store the fresh rotated token row under the existing session tree
+    await refreshTokensRepository.create({
+      userId: user.id,
+      sessionId: tokenRecord.session_id,
+      tokenHash: hashToken(newRefreshToken),
+      expiresAt: refreshExpiresAt
+    });
+
+    // 8. Sign an accelerated short-lived access JWT
+    const accessToken = signAccessToken({
+      sub: user.id,
+      role: user.role,
+      email: user.email,
+      sessionId: tokenRecord.session_id
+    });
+
+    const company = user.role === Role.COMPANY ? await companiesRepository.findByUserId(user.id) : null;
+
+    return {
+      access_token: accessToken,
+      refresh_token: newRefreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        email_verified: user.email_verified,
+        status: user.status,
+        verification_status: company?.verification_status
+      }
+    };
   }
 };
