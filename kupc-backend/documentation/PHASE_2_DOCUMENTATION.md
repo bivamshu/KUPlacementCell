@@ -2450,11 +2450,30 @@ Run after applying both migrations:
 
 ## Operational Checklist Before Production
 
-Apply in order:
+### Automated setup (recommended)
+
+From `kupc-backend/`:
+
+```bash
+npm run setup:phase2   # generates .env: JWT secret, admin TOTP, dev SMTP (Ethereal)
+```
+
+Then create a Supabase project (first time): see `supabase/SETUP.md`.
+
+Fill `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, and `DATABASE_URL` in `.env`, then:
+
+```bash
+npm run db:migrate     # applies both SQL migrations
+npm test
+npm run typecheck
+npm run dev            # http://localhost:5000/api/docs
+```
+
+### Manual checklist (same steps)
 
 1. Run `supabase/migrations/20260709000000_phase2_auth_schema.sql`
 2. Run `supabase/migrations/20260709000001_phase2_registration_rpcs.sql`
-3. Set `OTP_EMAIL_ENABLED=true` and configure SMTP
+3. Set `OTP_EMAIL_ENABLED=true` and configure SMTP (or use Ethereal from `setup:phase2`)
 4. Set `ADMIN_TOTP_SECRET` and `ADMIN_PASSWORD_LOGIN_ENABLED=false`
 5. Optionally set `REDIS_URL` for multi-instance deployments
 6. Run `npm test` and `npm run typecheck`
