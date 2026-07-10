@@ -4,19 +4,23 @@ export type CompanyRequestRecord = {
   id: string;
   company_id: string;
   document_type: string;
-  file_url: string;
+  file_url: string | null;
   status: 'pending' | 'approved' | 'rejected';
   created_at: string;
 };
 
 export const companyRequestsRepository = {
-  async create(input: { companyId: string; documentType: string; fileUrl: string }): Promise<CompanyRequestRecord> {
+  async create(input: {
+    companyId: string;
+    documentType: string;
+    fileUrl?: string;
+  }): Promise<CompanyRequestRecord> {
     const { data, error } = await supabaseAdmin
-      .from('company_requests')
+      .from('company_verification_requests')
       .insert({
         company_id: input.companyId,
         document_type: input.documentType,
-        file_url: input.fileUrl,
+        file_url: input.fileUrl ?? null,
         status: 'pending'
       })
       .select()

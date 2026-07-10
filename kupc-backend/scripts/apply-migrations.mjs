@@ -1,5 +1,5 @@
 /**
- * Apply Phase 2 Supabase SQL migrations in order via DATABASE_URL
+ * Apply Supabase SQL migrations in order via DATABASE_URL
  * Run: npm run db:migrate
  */
 import fs from 'fs';
@@ -15,7 +15,8 @@ dotenv.config({ path: path.join(root, '.env') });
 
 const migrations = [
   '20260709000000_phase2_auth_schema.sql',
-  '20260709000001_phase2_registration_rpcs.sql'
+  '20260709000001_phase2_registration_rpcs.sql',
+  '20260710000000_phase3_schema.sql'
 ];
 
 async function main() {
@@ -45,7 +46,12 @@ async function main() {
     const tables = await client.query(`
       SELECT table_name FROM information_schema.tables
       WHERE table_schema = 'public'
-        AND table_name IN ('users','students','companies','sessions','refresh_tokens','student_otps','company_requests')
+        AND table_name IN (
+          'users','students','companies','sessions','refresh_tokens','student_otps',
+          'company_verification_requests','skills','resumes','resume_analysis','student_skills',
+          'jobs','swipes','matches','saved_jobs','conversations','messages',
+          'notifications','reports','analytics_events'
+        )
       ORDER BY table_name
     `);
 
