@@ -11,10 +11,10 @@ Phase 3B turns the Phase 3A paper design into executable Supabase SQL, then inde
 | 5 | PostgreSQL schema conventions | Complete |
 | 6 | Supabase table implementation | Complete |
 | 7 | Indexing strategy | Complete |
-| 8 | Row Level Security policies | Pending (RLS enabled; policies not yet written) |
-| 9 | Seed data | Pending |
+| 8 | Row Level Security policies | Complete |
+| 9 | Seed data | Complete |
 | 10 | Repository layer | Pending (one rename fix done) |
-| 11 | Testing matrix | Partial (static schema + index tests) |
+| 11 | Testing matrix | Partial (static schema + index + RLS + seed tests) |
 
 ---
 
@@ -294,10 +294,8 @@ documentation/PHASE_3B_DOCUMENTATION.md                 (this file)
 
 | Milestone | Next deliverable |
 | --- | --- |
-| **8** | RLS policies (owner / participant / public-read rules) |
-| **9** | Seed script (100 students, 50 companies, 200 jobs, …) |
 | **10** | Repository files per table under `src/database/` |
-| **11** | Full CRUD / cascade / uniqueness / RLS test matrix |
+| **11** | Full CRUD / cascade / uniqueness / RLS / `EXPLAIN ANALYZE` test matrix |
 
 ---
 
@@ -446,4 +444,192 @@ supabase/README.md
 
 ---
 
-*KUPC — Phase 3B Milestone 7 complete. RLS policies (Milestone 8) can begin.*
+# Milestone 8 — Row Level Security Policies (Complete)
+
+## What it is
+
+Milestone 8 writes the actual `CREATE POLICY` statements for every Phase 2/3 table. RLS was already **enabled** in the schema migrations; without policies, authenticated JWT clients would be denied (or over-permitted, depending on defaults). The KUPC Express API continues to use the **service_role** key, which bypasses RLS — these policies protect direct anon/authenticated Supabase access.
+
+## Why it was done
+
+Profiles, jobs, swipes, matches, and chat all contain private data. Policies enforce:
+
+| Rule | Example |
+| --- | --- |
+| Own-row access | Student can only `SELECT`/`UPDATE` their own `students` row |
+| Public-read where intentional | Anyone authenticated can view `companies` with `verification_status = 'approved'` |
+| Open feed | Students can `SELECT` jobs where `status = 'open'` |
+| Participant-only | Match/conversation/message access only if `auth.uid()` is the student or company on the match |
+| Server-owned writes | Match inserts stay on service_role (no client INSERT policy on `matches`) |
+
+## What was done
+
+### Migration file
+
+```text
+supabase/migrations/20260710000002_phase3_rls_policies.sql
+```
+
+Registered in `scripts/apply-migrations.mjs` and applied with `npm run db:migrate`.
+
+Policies are idempotent: each uses `DROP POLICY IF EXISTS` before `CREATE POLICY`.
+
+### Policy map (summary)
+
+| Area | Policies |
+| --- | --- |
+| `students` | Own-row SELECT / UPDATE / INSERT |
+| `companies` | Own-row ALL + authenticated SELECT of approved companies |
+| `jobs` | Company manages own jobs; SELECT open jobs |
+| `resumes` / `resume_analysis` | Student owns resumes; analysis via resume ownership subquery |
+| `skills` / `student_skills` | Authenticated read skills; students manage own skill links |
+| `swipes` / `matches` | Students manage own swipes; companies view swipes on their jobs; participants view matches |
+| `conversations` / `messages` | Participant SELECT; participants send/update messages |
+| `notifications` / `saved_jobs` / `reports` | Own-row read/update; students manage saved jobs; users file/view own reports |
+| `company_verification_requests` | Company manages own requests |
+| `users` / `analytics_events` | Own-row SELECT; users insert own analytics |
+
+### Test file
+
+```text
+src/__tests__/phase3.rls.test.ts
+```
+
+Static checks that required policy names and `auth.uid()` / `service_role` notes are present.
+
+## Files touched
+
+```text
+supabase/migrations/20260710000002_phase3_rls_policies.sql
+scripts/apply-migrations.mjs
+src/__tests__/phase3.rls.test.ts
+documentation/PHASE_3B_DOCUMENTATION.md
+supabase/README.md
+```
+
+## Milestone 8 exit checklist
+
+| Item | Status |
+| --- | --- |
+| RLS policy migration created | Done |
+| Owner / participant / public-read rules covered | Done |
+| Idempotent DROP + CREATE | Done |
+| Registered + applied via `db:migrate` | Done |
+| Static RLS tests pass | Done |
+| Docs updated | Done |
+
+---
+
+# Milestone 9 — Seed Data (Complete)
+
+## What it is
+
+Milestone 9 loads realistic demo data into a **local or staging** Supabase project so later phases (profiles, swiping, matching, chat) can be built and demoed without waiting on real signups.
+
+**Never run the seed against production.**
+
+## Why it was done
+
+Empty tables make feed, match, and chat work untestable. Seed data also exercises uniqueness constraints, cascades (via re-seed cleanup), and gives Milestone 11 something meaningful for `EXPLAIN ANALYZE`.
+
+## Volumes (Phase 3 spec)
+
+| Dataset | Volume | Notes |
+| --- | --- | --- |
+| Skills | 40 | Canonical list upserted on `name` |
+| Students | 100 | `seed.student.NNN@ku.edu.np`, CGPA 2.0–4.0, mixed departments/years, 3–8 skills each |
+| Companies | 50 | ~70% approved / ~20% pending / ~10% rejected |
+| Jobs | 200 | Mostly on approved companies; mixed `job_type` and `status` |
+| Swipes | ~500 | Mix of left/right on open jobs |
+| Matches / conversations / messages | ~25 | Derived from a subset of right-swipes (simulates company reciprocation) |
+| Saved jobs | ~80 | Bookmarks for feed/demo UI |
+| Notifications | 2 per match | `type = match` for student and company |
+
+## How it works
+
+### Script
+
+```text
+scripts/seed.ts
+```
+
+Run:
+
+```bash
+npm run db:seed
+```
+
+Requires `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in `.env`.
+
+### Order of operations
+
+1. **Safety gate** — refuse if `NODE_ENV=production` or URL looks like prod (override only with `ALLOW_SEED_ON_PROD_URL=1`)
+2. **Clear prior seed** — delete `public.users` rows with `email LIKE 'seed.%'` via `auth.admin.deleteUser` (cascades profiles, jobs, swipes, matches, chat)
+3. **Skills** — upsert 40 canonical names
+4. **Students** — `auth.admin.createUser` → `register_student_profile` RPC → profile fields + `student_skills`
+5. **Companies** — same pattern with `register_company_profile`, then set verification mix + industry
+6. **Jobs** — batch insert 200 rows
+7. **Swipes / matches / chat** — insert swipes; for ~25 right-swipes create `matches` + `conversations` + opener `messages` + notifications; insert saved jobs
+
+### Auth dependency
+
+`public.users.id` references `auth.users(id)`, so every seeded student/company must be created through the Auth Admin API first. All seed accounts share password:
+
+```text
+SeedPass123!
+```
+
+Examples:
+
+- Student: `seed.student.001@ku.edu.np`
+- Company: `seed.company.001@example.com`
+
+### Idempotency
+
+Re-running `npm run db:seed` clears previous `seed.*` users then inserts fresh data. Skills are upserted (safe to keep across runs). Faker is seeded with a fixed seed (`20260710`) for reproducible names where possible; Auth UUIDs still differ each run.
+
+### Match derivation note
+
+The product model is: student right-swipe + company reciprocation → match. The `swipes` table stores the student decision; company reciprocation is application logic (service_role inserts into `matches`). The seed creates matches for a deliberate subset of right-swipes so chat can be demoed without a live company client.
+
+## Test file
+
+```text
+src/__tests__/phase3.seed.test.ts
+```
+
+Static checks that the script encodes required volumes, clears `seed.*` users, creates auth + profiles + jobs/swipes/matches, and refuses production.
+
+## Files touched
+
+```text
+scripts/seed.ts
+package.json                    (db:seed script; @faker-js/faker + tsx)
+src/__tests__/phase3.seed.test.ts
+documentation/PHASE_3B_DOCUMENTATION.md
+supabase/README.md
+```
+
+## Milestone 9 exit checklist
+
+| Item | Status |
+| --- | --- |
+| Seed script created | Done |
+| 100 students / 50 companies / 200 jobs / ~40 skills | Done |
+| Swipes + derived matches/conversations | Done |
+| Idempotent re-run (clear seed.* then insert) | Done |
+| Production safety guard | Done |
+| `npm run db:seed` wired | Done |
+| Static seed tests pass | Done |
+| Docs updated | Done |
+
+## What comes next
+
+| Milestone | Next deliverable |
+| --- | --- |
+| **10** | Repository files per table under `src/database/` |
+| **11** | Full CRUD / cascade / uniqueness / RLS / `EXPLAIN ANALYZE` test matrix |
+
+---
+
+*KUPC — Phase 3B Milestone 9 complete. Repository layer (Milestone 10) can begin.*

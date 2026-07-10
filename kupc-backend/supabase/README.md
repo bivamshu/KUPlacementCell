@@ -6,6 +6,7 @@
 2. `supabase/migrations/20260709000001_phase2_registration_rpcs.sql` — atomic registration RPCs
 3. `supabase/migrations/20260710000000_phase3_schema.sql` — Phase 3 domain tables + profile extensions
 4. `supabase/migrations/20260710000001_phase3_indexes.sql` — Phase 3 hot-path indexes
+5. `supabase/migrations/20260710000002_phase3_rls_policies.sql` — Phase 3 RLS policies
 
 ### Option A: npm script (recommended)
 
@@ -16,6 +17,16 @@ npm run db:migrate
 ```
 
 Requires `DATABASE_URL` in `.env` (Supabase Settings → Database → Connection string URI).
+
+### Seed demo data (Milestone 9)
+
+After migrations, load local/staging demo data (**never production**):
+
+```bash
+npm run db:seed
+```
+
+Requires `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Creates 100 students, 50 companies, 200 jobs, ~40 skills, ~500 swipes, and derived matches/conversations. All seed emails use the `seed.` prefix; password is `SeedPass123!`. Re-running clears prior `seed.*` users first.
 
 ### Option B: Supabase SQL editor
 
@@ -94,7 +105,24 @@ WHERE schemaname = 'public' AND indexname LIKE 'idx_%'
 ORDER BY tablename, indexname;
 ```
 
-Row Level Security is enabled on all tables. Policies for Phase 3 tables are added in Milestone 8. The KUPC backend uses the **service-role** key for trusted server-side repository access.
+Row Level Security is enabled on all tables. Phase 3 policies live in `20260710000002_phase3_rls_policies.sql` (Milestone 8). The KUPC backend uses the **service-role** key for trusted server-side repository access.
+
+## Seed data (Milestone 9)
+
+| Dataset | Count |
+| --- | --- |
+| Skills | 40 |
+| Students | 100 (`seed.student.NNN@ku.edu.np`) |
+| Companies | 50 (`seed.company.NNN@example.com`) |
+| Jobs | 200 |
+| Swipes | ~500 |
+| Matches / conversations | ~25 (derived) |
+
+```bash
+npm run db:seed
+```
+
+Demo password for all seed accounts: `SeedPass123!`
 
 ## Production configuration checklist
 
