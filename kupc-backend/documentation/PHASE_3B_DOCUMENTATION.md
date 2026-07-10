@@ -14,7 +14,7 @@ Phase 3B turns the Phase 3A paper design into executable Supabase SQL, then inde
 | 8 | Row Level Security policies | Complete |
 | 9 | Seed data | Complete |
 | 10 | Repository layer | Complete |
-| 11 | Testing matrix | Partial (static schema + index + RLS + seed + repository tests) |
+| 11 | Testing matrix | Complete |
 
 ---
 
@@ -753,4 +753,154 @@ documentation/PHASE_3B_DOCUMENTATION.md
 
 ---
 
-*KUPC — Phase 3B Milestone 10 complete. Testing matrix (Milestone 11) can begin.*
+# Milestone 11 — Testing Matrix (Complete)
+
+## What it is
+
+Milestone 11 is the Phase 3B quality gate: prove the schema, indexes, RLS, seed volumes, and repository boundary behave as designed — not only that migration files exist.
+
+## Why it was done
+
+Static migration tests (M6–M10) catch missing SQL. They cannot catch:
+
+- Constraint codes that fire incorrectly
+- Cascades that leave orphans
+- RLS policies that fail open
+- Indexes the planner never uses
+- Accidental Supabase `.from(...)` calls leaking into services
+
+## What was done
+
+### Test files
+
+| File | Kind | Covers |
+| --- | --- | --- |
+| `phase3.schema.test.ts` | Static | Tables, FKs, triggers, RLS enabled |
+| `phase3.indexes.test.ts` | Static | Hot-path index names + partial predicate |
+| `phase3.rls.test.ts` | Static | Policy names / `auth.uid()` / service_role notes |
+| `phase3.seed.test.ts` | Static | Seed volumes, idempotency, prod guard |
+| `phase3.repositories.test.ts` | Static | Repo files + method shapes |
+| `phase3.boundary.test.ts` | Static | No `.from('table')` outside `src/database/` |
+| `phase3.matrix.test.ts` | **Live DB** | CRUD, cascades, uniqueness, EXPLAIN, RLS both directions |
+
+Helper: `src/__tests__/helpers/phase3Db.ts` (pg client, auth user fixtures, `SET LOCAL ROLE authenticated` for RLS).
+
+### Run
+
+```bash
+npm run test:phase3
+```
+
+Requires `DATABASE_URL` in `.env` for the live matrix. Without it, live tests are skipped; static suites still run.
+
+Verified on 2026-07-10: **7 suites / 109 tests passed** (including live matrix).
+
+### Matrix results
+
+#### Schema & CRUD
+
+| Check | Result |
+| --- | --- |
+| Valid inserts across Phase 3 tables | Pass |
+| `NOT NULL` violation → `23502` | Pass |
+| `CHECK` (`cgpa = 5.0`) → `23514` | Pass |
+| Update + delete by PK | Pass |
+
+#### Relationships & Cascades
+
+| Check | Result |
+| --- | --- |
+| Delete student → resumes / swipes / matches / `student_skills` CASCADE | Pass |
+| Delete company → jobs / swipes / matches CASCADE | Pass |
+| Delete active resume → `students.resume_id` SET NULL, student survives | Pass |
+| Swipe FK to missing student → `23503` | Pass |
+
+#### Uniqueness
+
+| Check | Result |
+| --- | --- |
+| Duplicate swipe triple → `23505` | Pass |
+| Duplicate `ku_id` → `23505` | Pass |
+| Duplicate skill name → `23505` | Pass |
+
+#### Indexes (`EXPLAIN ANALYZE`)
+
+| Check | Result |
+| --- | --- |
+| `jobs WHERE status = 'open'` uses index path (`enable_seqscan=off`) | Pass |
+| `swipes WHERE student_id = ?` uses index path | Pass |
+| `idx_jobs_status`, `idx_swipes_student_id`, `idx_jobs_open_company_id` exist | Pass |
+
+Note: with small tables Postgres may prefer seq scans; tests disable seq scans to prove indexes are selectable, and also assert index catalog presence.
+
+#### Row Level Security
+
+| Check | Result |
+| --- | --- |
+| Student A cannot SELECT/UPDATE student B | Pass |
+| Company cannot UPDATE another company's job | Pass |
+| Student sees `open` jobs, not other-company `draft` | Pass |
+| Non-participant cannot SELECT/INSERT messages | Pass |
+| Student cannot view another student's resumes/analysis | Pass |
+| Service-role / DB owner bypasses RLS | Pass |
+
+#### Repository boundary
+
+| Check | Result |
+| --- | --- |
+| No table `.from(...)` outside `src/database/` (+ `config/supabase.ts`) | Pass |
+| `auth.service.ts` uses repositories for table access | Pass |
+
+## Files touched
+
+```text
+src/__tests__/helpers/phase3Db.ts
+src/__tests__/phase3.matrix.test.ts
+src/__tests__/phase3.boundary.test.ts
+package.json                         (test:phase3; @types/pg)
+documentation/PHASE_3B_DOCUMENTATION.md
+```
+
+## Milestone 11 exit checklist
+
+| Item | Status |
+| --- | --- |
+| CRUD / constraint tests | Done |
+| Cascade + FK tests | Done |
+| Uniqueness tests | Done |
+| EXPLAIN ANALYZE / index verification | Done |
+| RLS owner vs non-owner | Done |
+| Repository boundary CI check | Done |
+| Live suite runnable via `npm run test:phase3` | Done |
+| Docs updated | Done |
+
+---
+
+# Phase 3 Exit Checklist
+
+Source: `documentation/KUPC_Phase3_Database_Design_Data_Modeling.md` §16.
+
+| # | Checklist item | Status | Evidence |
+| --- | --- | --- | --- |
+| 1 | All 11 milestones complete and individually tested | **Done** | M5–M11 documented; static + live tests green |
+| 2 | ER diagram matches implemented schema | **Done** | Phase 3A mermaid ER (`PHASE_3A_DOCUMENTATION.md` §3.2) aligns with `20260710000000_phase3_schema.sql` tables/FKs. No separate `er-diagram.png` export — mermaid is the project artifact. |
+| 3 | Every table has a PK; every FK has explicit `ON DELETE` | **Done** | Schema migration + M5 conventions + cascade matrix tests |
+| 4 | Schema verified 1NF / 2NF / 3NF | **Done** | Phase 3A normalization write-up; `company_id` on swipes documented as intentional 3NF exception |
+| 5 | Hot-path indexes + `EXPLAIN ANALYZE` | **Done** | M7 migration + M11 EXPLAIN tests |
+| 6 | RLS enabled and verified both directions | **Done** | M8 policies + M11 live RLS tests |
+| 7 | Seed data (100 / 50 / 200 / ~40) loads cleanly | **Done** | M9 `npm run db:seed` verified counts |
+| 8 | Repository layer is only table-access path | **Done** | M10 repos + M11 boundary test. (`supabaseAdmin.auth.*` in auth service is Auth Admin API, not table `.from`) |
+| 9 | Full CRUD / cascade / uniqueness / index / RLS matrix passes | **Done** | `npm run test:phase3` → 109 passed |
+
+### Phase 3 verdict
+
+**Phase 3 (3A design + 3B implementation) exit checklist is complete.** Phase 4 — Resume Upload & Parsing — may begin.
+
+### Minor notes (not blockers)
+
+- Spec folder sketch (`database/migrations`, `policies/` per table) maps to this repo as `supabase/migrations/*.sql` and `src/database/*.repository.ts` — same responsibilities, different layout.
+- `er-diagram.png` was not exported; the mermaid ER in Phase 3A is the maintained diagram.
+
+---
+
+*KUPC — Phase 3B complete (Milestones 5–11). Phase 4 can begin.*

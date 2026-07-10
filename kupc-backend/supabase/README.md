@@ -124,6 +124,14 @@ npm run db:seed
 
 Demo password for all seed accounts: `SeedPass123!`
 
+## Testing (Milestone 11)
+
+```bash
+npm run test:phase3
+```
+
+Runs static Phase 3 suites plus the live matrix (CRUD, cascades, uniqueness, RLS, `EXPLAIN ANALYZE`). Live tests need `DATABASE_URL`.
+
 ## Production configuration checklist
 
 After migrations:
