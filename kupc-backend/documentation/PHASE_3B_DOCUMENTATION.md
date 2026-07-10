@@ -13,8 +13,8 @@ Phase 3B turns the Phase 3A paper design into executable Supabase SQL, then inde
 | 7 | Indexing strategy | Complete |
 | 8 | Row Level Security policies | Complete |
 | 9 | Seed data | Complete |
-| 10 | Repository layer | Pending (one rename fix done) |
-| 11 | Testing matrix | Partial (static schema + index + RLS + seed tests) |
+| 10 | Repository layer | Complete |
+| 11 | Testing matrix | Partial (static schema + index + RLS + seed + repository tests) |
 
 ---
 
@@ -627,9 +627,130 @@ supabase/README.md
 
 | Milestone | Next deliverable |
 | --- | --- |
-| **10** | Repository files per table under `src/database/` |
 | **11** | Full CRUD / cascade / uniqueness / RLS / `EXPLAIN ANALYZE` test matrix |
 
 ---
 
-*KUPC — Phase 3B Milestone 9 complete. Repository layer (Milestone 10) can begin.*
+# Milestone 10 — Repository Layer (Complete)
+
+## What it is
+
+Milestone 10 adds a typed persistence layer under `src/database/` so controllers and services never call Supabase (or write SQL) directly.
+
+```text
+Controller → Service → Repository → Supabase (service_role)
+```
+
+Each repository exposes only the query shapes later feature services need — not a generic unrestricted CRUD dump.
+
+## Why it was done
+
+1. **Isolation** — persistence details (`.eq()` chains, table names, column mapping) can change without rewriting business logic.
+2. **Testability** — services mock repositories instead of needing a live database.
+3. **Consistency** — Phase 2 already used this pattern for auth tables; Phase 3 domain tables follow the same style.
+4. **Error surfacing** — every method checks Supabase `error` and `throw`s it; services handle failures explicitly.
+
+## Conventions (match Phase 2)
+
+| Rule | Detail |
+| --- | --- |
+| Client | Always `supabaseAdmin` (service_role; bypasses RLS) |
+| Inputs | camelCase (`studentId`, `jobType`) |
+| DB columns | snake_case in inserts/updates |
+| Returns | Typed `*Record` objects (or `null` / `[]`) |
+| Errors | `if (error) throw error` — never swallow |
+| Scope | Query shapes for known hot paths only |
+
+## Repositories added / extended
+
+### Extended (Phase 2 → Phase 3 profile fields)
+
+| File | New / extended methods |
+| --- | --- |
+| `students.repository.ts` | `findById`, `findByKuId`, `listByDepartment`, `updateProfile`, `setActiveResume` |
+| `companies.repository.ts` | `findById`, `listPending`, `listApproved`, `listByVerificationStatus`, `updateProfile`, `setVerificationStatus` |
+| `companyRequests.repository.ts` | `listByCompany`, `listPending`, `setStatus` + alias `companyVerificationRequestsRepository` |
+
+### New (Phase 3 domain)
+
+| File | Table(s) | Key methods |
+| --- | --- | --- |
+| `jobs.repository.ts` | `jobs` | `create`, `findById`, `listByCompany`, `listOpenForFeed`, `update`, `deleteById` |
+| `resumes.repository.ts` | `resumes`, `resume_analysis` | `create`, `listByStudent`, `createAnalysis`, `findAnalysisByResumeId` |
+| `skills.repository.ts` | `skills`, `student_skills` | `listAll`, `upsertByName`, `linkStudentSkill`, `listForStudent` |
+| `swipes.repository.ts` | `swipes` | `create`, `listJobIdsByStudent`, `findStudentRightSwipe`, `listByCompany` |
+| `matches.repository.ts` | `matches` | `create`, `findByTriple`, `listByStudent`, `listByCompany` |
+| `conversations.repository.ts` | `conversations` | `createForMatch`, `findById`, `findByMatchId` |
+| `messages.repository.ts` | `messages` | `create`, `listByConversation`, `markRead` |
+| `notifications.repository.ts` | `notifications` | `create`, `listByUser`, `markRead`, `markAllReadForUser` |
+| `savedJobs.repository.ts` | `saved_jobs` | `save`, `unsave`, `listByStudent`, `exists` |
+| `reports.repository.ts` | `reports` | `create`, `listByReporter`, `listOpen`, `setStatus` |
+| `analyticsEvents.repository.ts` | `analytics_events` | `create`, `listByUser`, `listByEventType` |
+
+Phase 2 auth repositories (`users`, `sessions`, `refreshTokens`, `studentOtps`) are unchanged.
+
+## Example: student feed path
+
+```typescript
+const swipedIds = await swipesRepository.listJobIdsByStudent(studentId);
+const feed = await jobsRepository.listOpenForFeed(swipedIds);
+```
+
+## Example: match creation path
+
+```typescript
+const swipe = await swipesRepository.create({ studentId, companyId, jobId, direction: 'right' });
+// …company reciprocates via service logic…
+const match = await matchesRepository.create({ studentId, companyId, jobId });
+const conversation = await conversationsRepository.createForMatch(match.id);
+await notificationsRepository.create({ userId: studentId, type: 'match', payload: { match_id: match.id } });
+```
+
+## Test file
+
+```text
+src/__tests__/phase3.repositories.test.ts
+```
+
+Static checks that every required repository file exists, exports the expected method names, uses `supabaseAdmin` with thrown errors, and does not embed raw SQL strings.
+
+## Files touched
+
+```text
+src/database/students.repository.ts          (extended)
+src/database/companies.repository.ts         (extended)
+src/database/companyRequests.repository.ts   (extended + alias)
+src/database/jobs.repository.ts              (new)
+src/database/resumes.repository.ts           (new)
+src/database/skills.repository.ts            (new)
+src/database/swipes.repository.ts            (new)
+src/database/matches.repository.ts           (new)
+src/database/conversations.repository.ts     (new)
+src/database/messages.repository.ts          (new)
+src/database/notifications.repository.ts     (new)
+src/database/savedJobs.repository.ts         (new)
+src/database/reports.repository.ts           (new)
+src/database/analyticsEvents.repository.ts   (new)
+src/__tests__/phase3.repositories.test.ts
+documentation/PHASE_3B_DOCUMENTATION.md
+```
+
+## Milestone 10 exit checklist
+
+| Item | Status |
+| --- | --- |
+| One repository per Phase 3 domain table (or close group) | Done |
+| Spec-required files present (students, companies, resumes, jobs, swipes, matches, conversations, messages, notifications) | Done |
+| Typed records + camelCase inputs | Done |
+| Errors thrown, not swallowed | Done |
+| `company_verification_requests` table name used | Done |
+| Static repository tests pass | Done |
+| Docs updated | Done |
+
+## What comes next
+
+**Milestone 11 — Testing matrix** (CRUD, cascades, uniqueness, RLS runtime checks, `EXPLAIN ANALYZE` on hot-path indexes).
+
+---
+
+*KUPC — Phase 3B Milestone 10 complete. Testing matrix (Milestone 11) can begin.*
