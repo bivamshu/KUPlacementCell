@@ -10,11 +10,11 @@ Phase 3B turns the Phase 3A paper design into executable Supabase SQL, then inde
 | --- | --- | --- |
 | 5 | PostgreSQL schema conventions | Complete |
 | 6 | Supabase table implementation | Complete |
-| 7 | Indexing strategy | Pending |
+| 7 | Indexing strategy | Complete |
 | 8 | Row Level Security policies | Pending (RLS enabled; policies not yet written) |
 | 9 | Seed data | Pending |
 | 10 | Repository layer | Pending (one rename fix done) |
-| 11 | Testing matrix | Partial (static schema tests only) |
+| 11 | Testing matrix | Partial (static schema + index tests) |
 
 ---
 
@@ -294,7 +294,6 @@ documentation/PHASE_3B_DOCUMENTATION.md                 (this file)
 
 | Milestone | Next deliverable |
 | --- | --- |
-| **7** | Index migration for hot-path FKs / filters |
 | **8** | RLS policies (owner / participant / public-read rules) |
 | **9** | Seed script (100 students, 50 companies, 200 jobs, …) |
 | **10** | Repository files per table under `src/database/` |
@@ -302,4 +301,149 @@ documentation/PHASE_3B_DOCUMENTATION.md                 (this file)
 
 ---
 
-*KUPC — Phase 3B Milestone 6 complete. Indexes (Milestone 7) can begin.*
+# Milestone 7 — Indexing Strategy (Complete)
+
+## What it is
+
+Milestone 7 adds explicit Postgres indexes on foreign keys and filter columns used in hot-path queries.
+
+**Important Postgres fact:** creating a foreign key does **not** automatically index the referencing column. Only the referenced primary key is indexed by default. Without child-side indexes, queries like “all jobs for this company” or “all swipes for this student” become sequential scans once tables grow past a few thousand rows.
+
+## Why it was done
+
+KUPC will repeatedly query:
+
+| Hot path | Query pattern | Index that helps |
+| --- | --- | --- |
+| Student job feed | `jobs WHERE status = 'open'` | `idx_jobs_status`, `idx_jobs_open_company_id` |
+| Company dashboard | `jobs WHERE company_id = ?` | `idx_jobs_company_id` |
+| Admin verification queue | `companies WHERE verification_status = 'pending'` | `idx_companies_verification_status` |
+| Avoid re-serving swipe cards | `swipes WHERE student_id = ?` | `idx_swipes_student_id` |
+| Company swipe analytics | `swipes WHERE company_id = ?` | `idx_swipes_company_id` |
+| Match lists | `matches WHERE student_id / company_id = ?` | `idx_matches_*` |
+| Chat history | `messages WHERE conversation_id = ?` | `idx_messages_conversation_id` |
+| Notification bell | `notifications WHERE user_id = ?` | `idx_notifications_user_id` |
+| Profile resume history | `resumes WHERE student_id = ?` | `idx_resumes_student_id` |
+| Student login / register | `students WHERE ku_id = ?` | `idx_students_ku_id` (also UNIQUE) |
+
+Those lookups must stay fast after seed data (100+ students, 200+ jobs) and real usage.
+
+## What was done
+
+### Migration file
+
+```text
+supabase/migrations/20260710000001_phase3_indexes.sql
+```
+
+Registered in `scripts/apply-migrations.mjs`:
+
+```js
+const migrations = [
+  '20260709000000_phase2_auth_schema.sql',
+  '20260709000001_phase2_registration_rpcs.sql',
+  '20260710000000_phase3_schema.sql',
+  '20260710000001_phase3_indexes.sql'
+];
+```
+
+Applied with:
+
+```bash
+npm run db:migrate
+```
+
+### Indexes created
+
+| Index | Table | Columns / predicate | Reason |
+| --- | --- | --- | --- |
+| `idx_students_ku_id` | students | `(ku_id)` | Registration / login lookup (also covered by UNIQUE) |
+| `idx_companies_verification_status` | companies | `(verification_status)` | Admin pending filter |
+| `idx_jobs_company_id` | jobs | `(company_id)` | Company dashboard |
+| `idx_jobs_status` | jobs | `(status)` | Student feed filter |
+| `idx_jobs_open_company_id` | jobs | `(company_id) WHERE status = 'open'` | Smaller partial index for open jobs |
+| `idx_swipes_student_id` | swipes | `(student_id)` | Exclude already-swiped jobs |
+| `idx_swipes_company_id` | swipes | `(company_id)` | Company swipe history |
+| `idx_matches_student_id` | matches | `(student_id)` | Student match list |
+| `idx_matches_company_id` | matches | `(company_id)` | Company match list |
+| `idx_messages_conversation_id` | messages | `(conversation_id)` | Chat history |
+| `idx_notifications_user_id` | notifications | `(user_id)` | Notification inbox |
+| `idx_resumes_student_id` | resumes | `(student_id)` | Profile resume history |
+
+### Concepts used
+
+**B-tree index (default)**  
+Best for equality and range lookups on scalar columns (`company_id = ?`, `status = 'open'`).
+
+**Partial index**  
+`idx_jobs_open_company_id` only indexes rows where `status = 'open'`. Smaller and faster when most queries care about open jobs and many rows are closed/draft.
+
+**UNIQUE already implies an index**  
+`students.ku_id` and swipe/match uniqueness constraints already create indexes. Explicit `idx_students_ku_id` is kept for naming clarity; swipe `UNIQUE (student_id, company_id, job_id)` already supports “has this student swiped this job?” checks.
+
+**Deferred: GIN on JSONB**  
+Indexes on `resume_analysis.extracted_skills` and `analytics_events.metadata` are deferred until Phase 4/5 needs JSON containment queries (e.g. “skills contains React”).
+
+### How to verify in Supabase
+
+List indexes:
+
+```sql
+SELECT indexname, tablename
+FROM pg_indexes
+WHERE schemaname = 'public'
+  AND indexname LIKE 'idx_%'
+ORDER BY tablename, indexname;
+```
+
+Optional planner check (more meaningful after seed data exists):
+
+```sql
+EXPLAIN ANALYZE
+SELECT * FROM public.jobs WHERE status = 'open';
+```
+
+Prefer `Index Scan` / `Bitmap Index Scan` over a plain `Seq Scan` on large tables. Full `EXPLAIN ANALYZE` verification is part of Milestone 11.
+
+### Test file
+
+```text
+src/__tests__/phase3.indexes.test.ts
+```
+
+Static checks that the migration defines every required index name and the open-jobs partial predicate. Run:
+
+```bash
+npm test
+```
+
+## Files touched
+
+```text
+supabase/migrations/20260710000001_phase3_indexes.sql
+scripts/apply-migrations.mjs
+src/__tests__/phase3.indexes.test.ts
+documentation/PHASE_3B_DOCUMENTATION.md
+supabase/README.md
+```
+
+## Milestone 7 exit checklist
+
+| Item | Status |
+| --- | --- |
+| Index migration file created | Done |
+| All hot-path indexes from the Phase 3 spec included | Done |
+| Partial open-jobs index included | Done |
+| Swipe indexes included | Done |
+| Registered in `apply-migrations.mjs` | Done |
+| Applied to Supabase (`npm run db:migrate`) | Done |
+| Static index tests pass | Done |
+| Docs updated | Done |
+
+## What comes next
+
+**Milestone 8 — RLS policies** (RLS is already enabled on tables; write the actual `CREATE POLICY` statements).
+
+---
+
+*KUPC — Phase 3B Milestone 7 complete. RLS policies (Milestone 8) can begin.*

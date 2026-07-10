@@ -5,6 +5,7 @@
 1. `supabase/migrations/20260709000000_phase2_auth_schema.sql` — Phase 2 auth tables + RLS
 2. `supabase/migrations/20260709000001_phase2_registration_rpcs.sql` — atomic registration RPCs
 3. `supabase/migrations/20260710000000_phase3_schema.sql` — Phase 3 domain tables + profile extensions
+4. `supabase/migrations/20260710000001_phase3_indexes.sql` — Phase 3 hot-path indexes
 
 ### Option A: npm script (recommended)
 
@@ -64,6 +65,34 @@ Requires the [Supabase CLI](https://supabase.com/docs/guides/cli) linked to your
 ## Triggers
 
 - `set_updated_at()` on `students`, `companies`, and `jobs`
+
+## Phase 3 indexes (Milestone 7)
+
+Hot-path indexes live in `20260710000001_phase3_indexes.sql`:
+
+| Index | Table |
+| --- | --- |
+| `idx_students_ku_id` | students |
+| `idx_companies_verification_status` | companies |
+| `idx_jobs_company_id` | jobs |
+| `idx_jobs_status` | jobs |
+| `idx_jobs_open_company_id` | jobs (partial: `WHERE status = 'open'`) |
+| `idx_swipes_student_id` | swipes |
+| `idx_swipes_company_id` | swipes |
+| `idx_matches_student_id` | matches |
+| `idx_matches_company_id` | matches |
+| `idx_messages_conversation_id` | messages |
+| `idx_notifications_user_id` | notifications |
+| `idx_resumes_student_id` | resumes |
+
+Verify:
+
+```sql
+SELECT indexname, tablename
+FROM pg_indexes
+WHERE schemaname = 'public' AND indexname LIKE 'idx_%'
+ORDER BY tablename, indexname;
+```
 
 Row Level Security is enabled on all tables. Policies for Phase 3 tables are added in Milestone 8. The KUPC backend uses the **service-role** key for trusted server-side repository access.
 

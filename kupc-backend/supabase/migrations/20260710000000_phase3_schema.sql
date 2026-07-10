@@ -191,17 +191,40 @@ CREATE TABLE IF NOT EXISTS public.analytics_events (
 -- ---------------------------------------------------------------------
 -- 10. Rename company_requests → company_verification_requests
 --     and allow nullable file_url (Phase 3A decision)
+--
+-- Idempotent for re-runs:
+-- - First run: rename company_requests → company_verification_requests
+-- - Later runs: Phase 2 may recreate company_requests (IF NOT EXISTS) while
+--   company_verification_requests already exists → drop the duplicate
 -- ---------------------------------------------------------------------
 
-ALTER TABLE IF EXISTS public.company_requests
-  RENAME TO company_verification_requests;
+DO $$
+BEGIN
+  IF to_regclass('public.company_requests') IS NOT NULL
+     AND to_regclass('public.company_verification_requests') IS NULL THEN
+    ALTER TABLE public.company_requests RENAME TO company_verification_requests;
+  ELSIF to_regclass('public.company_requests') IS NOT NULL
+     AND to_regclass('public.company_verification_requests') IS NOT NULL THEN
+    -- Phase 2 recreated the old table after a previous rename; drop duplicate
+    DROP TABLE public.company_requests;
+  END IF;
+END $$;
 
 ALTER TABLE public.company_verification_requests
   ALTER COLUMN file_url DROP NOT NULL;
 
 -- Rename index if it still has the old name
-ALTER INDEX IF EXISTS company_requests_company_id_idx
-  RENAME TO company_verification_requests_company_id_idx;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relname = 'company_requests_company_id_idx'
+  ) THEN
+    ALTER INDEX public.company_requests_company_id_idx
+      RENAME TO company_verification_requests_company_id_idx;
+  END IF;
+END $$;
 
 -- ---------------------------------------------------------------------
 -- 11. updated_at trigger helper + attach to tables that have updated_at
