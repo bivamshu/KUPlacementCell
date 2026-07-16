@@ -17,7 +17,9 @@ const migrations = [
   '20260709000000_phase2_auth_schema.sql',
   '20260709000001_phase2_registration_rpcs.sql',
   '20260710000000_phase3_schema.sql',
-  '20260710000001_phase3_indexes.sql'
+  '20260710000001_phase3_indexes.sql',
+  '20260710000002_phase3_rls_policies.sql',
+  '20260711000000_phase4_resume_analysis.sql'
 ];
 
 async function main() {

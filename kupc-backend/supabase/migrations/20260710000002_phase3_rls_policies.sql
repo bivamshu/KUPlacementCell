@@ -189,6 +189,8 @@ CREATE POLICY "Only conversation participants can send messages"
   );
 
 DROP POLICY IF EXISTS "Senders can update their message read state" ON public.messages;
+DROP POLICY IF EXISTS "Participants can update their messages in their conversations" ON public.messages;
+DROP POLICY IF EXISTS "Participants can update messages in their conversations" ON public.messages;
 CREATE POLICY "Participants can update messages in their conversations"
   ON public.messages FOR UPDATE
   USING (
