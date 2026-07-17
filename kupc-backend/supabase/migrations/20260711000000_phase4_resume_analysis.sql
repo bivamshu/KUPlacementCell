@@ -12,7 +12,7 @@ ALTER TABLE public.resume_analysis
     ADD COLUMN IF NOT EXISTS score_breakdown JSONB, 
     ADD COLUMN IF NOT EXISTS strengths JSONB,
     ADD COLUMN IF NOT EXISTS suggestions JSONB, 
-    ADD COLUMN IF NOT EXISTS issues_idetified JSONB, 
+    ADD COLUMN IF NOT EXISTS issues_identified JSONB, 
     ADD COLUMN IF NOT EXISTS raw_response JSONB, 
     ADD COLUMN IF NOT EXISTS model TEXT, 
     ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ, 

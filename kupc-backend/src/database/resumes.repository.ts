@@ -13,8 +13,8 @@ export type ResumeAnalysisRecord = {
   id: string;
   resume_id: string;
   status: AnalysisStatus;
-  errorMessages: string | null;
-  extractedSkills: unknown;
+  error_message: string | null;
+  extracted_skills: unknown;
   ats_score: number | null;
   grade: string | null;
   score_breakdown: unknown;
@@ -23,10 +23,10 @@ export type ResumeAnalysisRecord = {
   issues_identified: unknown;
   summary: string | null;
   raw_response: unknown;
-  model: string | null; 
+  model: string | null;
   analyzed_at: string;
   started_at: string | null;
-  completeed_at: string | null;
+  completed_at: string | null;
 };
 
 export const resumesRepository = {
@@ -41,22 +41,23 @@ export const resumesRepository = {
       file_url: input.fileUrl,
       file_name: input.fileName
     };
-    if(input.id){
+    if (input.id) {
       row.id = input.id;
     }
 
-    const {data, error} = await supabaseAdmin.from('resumes').insert(row).select().single();
+    const { data, error } = await supabaseAdmin.from('resumes').insert(row).select().single();
 
-    if(error){
+    if (error) {
       throw error;
     }
+
     return data;
   },
 
   async findById(id: string): Promise<ResumeRecord | null> {
     const { data, error } = await supabaseAdmin.from('resumes').select('*').eq('id', id).maybeSingle();
 
-    if(error){
+    if (error) {
       throw error;
     }
 
@@ -64,27 +65,28 @@ export const resumesRepository = {
   },
 
   async listByStudent(studentId: string): Promise<ResumeRecord[]> {
-    const { data, error } =await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from('resumes')
       .select('*')
       .eq('student_id', studentId)
-      .order('uploaded_at', {ascending: false});
-    if (error){
+      .order('uploaded_at', { ascending: false });
+
+    if (error) {
       throw error;
     }
 
     return data ?? [];
   },
 
-  async deleteId(id: string): Promise<void> {
+  async deleteById(id: string): Promise<void> {
     const { error } = await supabaseAdmin.from('resumes').delete().eq('id', id);
 
-    if(error){
+    if (error) {
       throw error;
     }
   },
 
-  /**Creates a pending analysis row(upload pipleline) */
+  /** Creates a pending analysis row (upload pipeline). */
   async createAnalysis(input: {
     resumeId: string;
     status?: AnalysisStatus;
@@ -97,9 +99,11 @@ export const resumesRepository = {
       })
       .select()
       .single();
-    if(error){
+
+    if (error) {
       throw error;
     }
+
     return data;
   },
 
@@ -110,35 +114,38 @@ export const resumesRepository = {
       .eq('id', id)
       .maybeSingle();
 
-    if(error){
+    if (error) {
       throw error;
     }
 
     return data;
   },
 
-  /**Latest analysis for a resume (by analyzed_at, then completed_at) */
-  async findAnalysisByResumeId(resumeId: string): Promise<ResumeAnalysisRecord | null>{
+  /** Latest analysis for a resume (by analyzed_at). */
+  async findAnalysisByResumeId(resumeId: string): Promise<ResumeAnalysisRecord | null> {
     const { data, error } = await supabaseAdmin
       .from('resume_analysis')
       .select('*')
       .eq('resume_id', resumeId)
-      .order('analyzed_at', { ascending: false})
+      .order('analyzed_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if(error){
+
+    if (error) {
       throw error;
     }
+
     return data;
   },
 
+  /** pending → processing (worker claim). */
   async updateAnalysisStatus(
     id: string,
     status: Extract<AnalysisStatus, 'pending' | 'processing'>
-  ): Promise<ResumeAnalysisRecord>{
+  ): Promise<ResumeAnalysisRecord> {
     const patch: Record<string, unknown> = { status };
 
-    if(status === 'processing'){
+    if (status === 'processing') {
       patch.started_at = new Date().toISOString();
       patch.error_message = null;
     }
@@ -150,19 +157,19 @@ export const resumesRepository = {
       .select()
       .single();
 
-     if(error) {
+    if (error) {
       throw error;
-     } 
+    }
 
-     return data;
+    return data;
   },
 
-  /**Write OpenAI result and mark completed */
+  /** Write OpenAI result and mark completed. */
   async completeAnalysis(
     id: string,
     input: {
-      atsScore: number; 
-      grade: string; 
+      atsScore: number;
+      grade: string;
       scoreBreakdown: unknown;
       extractedSkills: unknown;
       summary: string;
@@ -172,15 +179,15 @@ export const resumesRepository = {
       rawResponse?: unknown;
       model?: string;
     }
-  ): Promise<ResumeAnalysisRecord>{
-    const now = new DataTransfer().toISOString();
-    
+  ): Promise<ResumeAnalysisRecord> {
+    const now = new Date().toISOString();
+
     const { data, error } = await supabaseAdmin
       .from('resume_analysis')
       .update({
         status: 'completed',
         error_message: null,
-        atis_score: input.atsScore,
+        ats_score: input.atsScore,
         grade: input.grade,
         score_breakdown: input.scoreBreakdown,
         extracted_skills: input.extractedSkills,
@@ -196,15 +203,15 @@ export const resumesRepository = {
       .eq('id', id)
       .select()
       .single();
-    
+
     if (error) {
       throw error;
     }
 
     return data;
-  }, 
+  },
 
-  /**Mark failed with message */
+  /** Mark failed with message. */
   async failAnalysis(id: string, errorMessage: string): Promise<ResumeAnalysisRecord> {
     const now = new Date().toISOString();
 
@@ -218,10 +225,11 @@ export const resumesRepository = {
       .eq('id', id)
       .select()
       .single();
+
     if (error) {
       throw error;
     }
+
     return data;
   }
-
 };
