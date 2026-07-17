@@ -4,10 +4,10 @@ import { config } from './config';
 const swaggerDefinition = {
   openapi: '3.0.3',
   info: {
-    title: 'KUPC API — Phase 2 Authentication',
+    title: 'KUPC API',
     version: config.api.version,
     description:
-      'OpenAPI documentation for KUPC Phase 2 auth endpoints. Admin login is intentionally omitted from public client SDK generation in production frontends.'
+      'OpenAPI documentation for KUPC backend — Phase 2 auth, Phase 4 resume upload and analysis.'
   },
   servers: [
     {
@@ -45,6 +45,34 @@ const swaggerDefinition = {
               statusCode: { type: 'integer' }
             }
           }
+        }
+      },
+      UploadResumeResponse: {
+        type: 'object',
+        properties: {
+          resumeId: { type: 'string', format: 'uuid' },
+          analysisId: { type: 'string', format: 'uuid' },
+          status: { type: 'string', enum: ['pending'] }
+        }
+      },
+      ResumeListItem: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          file_name: { type: 'string' },
+          file_url: { type: 'string' },
+          uploaded_at: { type: 'string', format: 'date-time' },
+          is_active: { type: 'boolean' }
+        }
+      },
+      AnalysisResponse: {
+        type: 'object',
+        properties: {
+          analysisId: { type: 'string', format: 'uuid' },
+          resumeId: { type: 'string', format: 'uuid' },
+          status: { type: 'string', enum: ['pending', 'processing', 'completed', 'failed'] },
+          error_message: { type: 'string', nullable: true },
+          result: { type: 'object', nullable: true }
         }
       }
     }
@@ -263,6 +291,153 @@ const swaggerDefinition = {
         responses: {
           '201': { description: 'Placeholder job created' },
           '403': { description: 'PENDING_VERIFICATION or INSUFFICIENT_ROLE' }
+        }
+      }
+    },
+    '/resumes': {
+      get: {
+        tags: ['Resumes'],
+        summary: 'List authenticated student resumes',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Resume list',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: {
+                          type: 'array',
+                          items: { $ref: '#/components/schemas/ResumeListItem' }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '403': { description: 'INSUFFICIENT_ROLE' }
+        }
+      },
+      post: {
+        tags: ['Resumes'],
+        summary: 'Upload PDF resume and enqueue analysis',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: ['file'],
+                properties: {
+                  file: { type: 'string', format: 'binary', description: 'PDF resume file' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          '202': {
+            description: 'Upload accepted',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/UploadResumeResponse' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '400': { description: 'RESUME_INVALID_TYPE or RESUME_TOO_LARGE' },
+          '403': { description: 'INSUFFICIENT_ROLE' },
+          '503': { description: 'RESUME_QUEUE_UNAVAILABLE' }
+        }
+      }
+    },
+    '/resumes/{id}': {
+      get: {
+        tags: ['Resumes'],
+        summary: 'Get resume metadata by id',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        responses: {
+          '200': {
+            description: 'Resume metadata',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/ResumeListItem' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '404': { description: 'RESUME_NOT_FOUND' }
+        }
+      },
+      delete: {
+        tags: ['Resumes'],
+        summary: 'Delete resume and storage object',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        responses: {
+          '200': { description: 'Resume deleted' },
+          '404': { description: 'RESUME_NOT_FOUND' }
+        }
+      }
+    },
+    '/resumes/{id}/analysis': {
+      get: {
+        tags: ['Resumes'],
+        summary: 'Poll latest analysis for a resume',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        responses: {
+          '200': {
+            description: 'Analysis status and result when completed',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/AnalysisResponse' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '404': { description: 'RESUME_NOT_FOUND or ANALYSIS_NOT_FOUND' }
         }
       }
     }

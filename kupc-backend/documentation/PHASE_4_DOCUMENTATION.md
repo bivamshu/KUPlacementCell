@@ -1,6 +1,6 @@
 # KUPC Phase 4 — Resume Upload & AI Analysis
 
-**Status:** In progress (Milestones 1–7 complete)  
+**Status:** In progress (Milestones 1–8 complete)  
 **Date:** 2026-07-11  
 **Depends on:** Phase 3 (3A design + 3B implementation) — complete  
 **References:** `PHASE_3A_DOCUMENTATION.md`, `PHASE_3B_DOCUMENTATION.md`, `INTEGRATION.md` (response shape only)  
@@ -15,7 +15,7 @@
 | 5 | PDF text extraction | Complete |
 | 6 | OpenAI scoring service | Complete |
 | 7 | Persistence & active-resume linkage | Complete |
-| 8 | Read APIs, polling & Swagger | Planned |
+| 8 | Read APIs, polling & Swagger | Complete |
 | 9 | Testing matrix & hardening | Planned |
 
 ---
@@ -1089,50 +1089,105 @@ npm run typecheck
 
 # Milestone 8 — Read APIs, Polling & Swagger
 
+**Status:** Complete  
+**Depends on:** Milestones 3–7 (upload pipeline + analysis persistence + active resume)  
+**Does not include:** Full Phase 4 test matrix (Milestone 9)
+
 ## What it is
 
-Milestone 8 exposes read/delete endpoints and documents them in Swagger so clients can poll analysis status and display results.
+Milestone 8 exposes read/delete endpoints and documents them in Swagger so clients can list resumes, poll analysis status, and display completed results.
 
 ## Why
 
-Upload returns 202; the UI must poll until `completed` or `failed`. Without read APIs, the pipeline is not usable.
+Upload returns **202**; the UI must poll until `completed` or `failed`. Without read APIs, the pipeline is not usable end-to-end.
 
-## How it will be completed
+## What was done
 
 ### 8.1 Endpoints
 
-| Method | Behavior |
+| Method | Path | Success | Behavior |
+| --- | --- | --- | --- |
+| `GET` | `/api/v1/resumes` | 200 | List student's resumes (newest first) with `is_active` |
+| `GET` | `/api/v1/resumes/:id` | 200 | Resume metadata; **404** `RESUME_NOT_FOUND` if not owner |
+| `GET` | `/api/v1/resumes/:id/analysis` | 200 | Latest analysis + `status`; **404** if no analysis |
+| `DELETE` | `/api/v1/resumes/:id` | 200 | Delete Storage object + DB row (CASCADE analysis; `students.resume_id` SET NULL via FK) |
+
+Ownership: `requireOwnedResume()` in the service layer checks `resume.student_id === req.user.id`. Cross-owner access returns **404** (no existence leak).
+
+### 8.2 Response mapping
+
+File: `src/modules/resumes/resumes.mapper.ts`
+
+| Function | Maps to |
 | --- | --- |
-| `GET /api/v1/resumes` | List current student’s resumes (newest first) |
-| `GET /api/v1/resumes/:id` | Metadata; 404 if not owner |
-| `GET /api/v1/resumes/:id/analysis` | Latest analysis including `status`; 404 if none |
-| `DELETE /api/v1/resumes/:id` | Delete Storage object + DB row (CASCADE analysis); clear active pointer via SET NULL |
+| `toResumeListItem` | `ResumeListItem` (+ `is_active` from `students.resume_id`) |
+| `toAnalysisResponse` | `AnalysisResponse` with `result` when `status === completed` |
+| `toAnalysisResultDto` | Full ATS score, skills, strengths, suggestions |
 
-Ownership: always filter by `student_id = req.user.id` in the service layer (defense in depth beyond RLS).
+### 8.3 Polling contract
 
-### 8.2 Polling contract
+Client polls `GET /api/v1/resumes/:id/analysis` every 2–3s until status is terminal:
 
-Client polls `GET .../analysis` every 2–3s until status is terminal. Response includes `status`, and when completed: score fields + feedback JSON.
+| Status | `result` field |
+| --- | --- |
+| `pending` / `processing` | `null` |
+| `completed` | Full `AnalysisResultDto` |
+| `failed` | `null`; `error_message` set |
 
-### 8.3 Swagger
+### 8.4 Delete behavior
 
-Extend `src/config/swagger.ts` / JSDoc on routes with schemas for upload 202, analysis payload, and error codes.
+1. Verify ownership
+2. `resumeStorage.deleteObject(file_url)`
+3. `resumesRepository.deleteById(id)` — cascades `resume_analysis`; DB FK sets `students.resume_id` NULL if this was the active resume
 
-### 8.4 Steps
+### 8.5 Swagger
 
-1. Implement list/get/analysis/delete in service + controller.
-2. Add ownership checks and consistent `AppError` codes.
-3. Document in Swagger UI.
-4. Smoke-test poll loop against worker.
+Extended `src/config/swagger.ts` with:
+
+- Tag: **Resumes**
+- Paths: `/resumes`, `/resumes/{id}`, `/resumes/{id}/analysis`
+- Schemas: `UploadResumeResponse`, `ResumeListItem`, `AnalysisResponse`
+- Multipart upload docs on `POST /resumes`
+
+Visible at `/api/docs`.
+
+### 8.6 Tests
+
+| File | Covers |
+| --- | --- |
+| `src/__tests__/phase4.read.test.ts` | List, get, analysis poll, delete, ownership 404, role 403 |
+| `src/__tests__/phase4.swagger.test.ts` | Resume paths and schemas in OpenAPI spec |
+| `src/__tests__/phase4.scaffold.test.ts` | Updated list returns 200 |
+
+**Verify:**
+
+```bash
+npm test -- src/__tests__/phase4
+npm run typecheck
+```
+
+### 8.7 Files touched
+
+| Action | Path |
+| --- | --- |
+| Create | `src/modules/resumes/resumes.mapper.ts` |
+| Edit | `src/modules/resumes/resumes.service.ts` |
+| Edit | `src/config/swagger.ts` |
+| Create | `src/__tests__/phase4.read.test.ts` |
+| Create | `src/__tests__/phase4.swagger.test.ts` |
+| Edit | `src/__tests__/phase4.scaffold.test.ts` |
 
 ## Milestone 8 exit checklist
 
-| Item | Done when |
+| Item | Status |
 | --- | --- |
-| All four read/delete routes work | Manual + automated tests |
-| Non-owner cannot read | 404/403 |
-| Swagger shows Phase 4 routes | Visible at `/api/docs` (or project path) |
-| Polling returns status transitions | pending → processing → completed |
+| All four read/delete routes work | Done |
+| Non-owner cannot read (404) | Done |
+| Swagger shows Phase 4 resume routes | Done |
+| Polling returns status + completed result | Done |
+| Delete removes Storage + DB row | Done |
+
+**What comes next:** Milestone 9 — full Phase 4 test matrix and hardening.
 
 ---
 
@@ -1194,11 +1249,11 @@ Script: `npm run test:phase4`.
 | # | Checklist item | Status | Evidence |
 | --- | --- | --- | --- |
 | 1 | All milestones 1–9 complete and tested | Pending | |
-| 2 | Student can upload PDF and receive 202 + analysis id | Pending | |
+| 2 | Student can upload PDF and receive 202 + analysis id | Done | M3 upload |
 | 3 | Worker completes OpenAI scoring and persists `resume_analysis` | Done | M5–M6 |
 | 4 | Failed jobs mark `failed` with reason; retries documented | Done | M4 worker |
 | 5 | `students.resume_id` updated only on successful analysis | Done | M7 processor |
-| 6 | Only owning student can access own resumes/analysis | Pending | |
+| 6 | Only owning student can access own resumes/analysis | Done | M8 read tests |
 | 7 | Secrets via env only (`OPENAI_API_KEY`, Redis, Supabase) | Pending | |
 | 8 | Phase 4 test suite green | Pending | |
 | 9 | Docs match implemented behavior | Pending | |
@@ -1206,7 +1261,7 @@ Script: `npm run test:phase4`.
 
 ### Phase 4 verdict
 
-**In progress.** Milestones 1–7 are complete (full upload → analyze → persist → active resume pipeline). Milestones 8–9 (read APIs, test matrix) remain.
+**In progress.** Milestones 1–8 are complete (full client-facing upload → analyze → poll → delete flow). Milestone 9 (test matrix & hardening) remains.
 
 ---
 

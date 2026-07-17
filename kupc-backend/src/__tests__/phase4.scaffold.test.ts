@@ -23,6 +23,22 @@ jest.mock('../config/env', () => {
   };
 });
 
+jest.mock('../database/resumes.repository', () => ({
+  resumesRepository: {
+    listByStudent: jest.fn().mockResolvedValue([])
+  }
+}));
+
+jest.mock('../database/students.repository', () => ({
+  studentsRepository: {
+    findById: jest.fn().mockResolvedValue({ id: 'test-user-id', resume_id: null })
+  }
+}));
+
+jest.mock('../queues/resumeAnalysis.queue', () => ({
+  enqueueResumeAnalysis: jest.fn()
+}));
+
 import app from '../app';
 import { AUTH_ERROR_CODES, Role } from '../modules/auth';
 import { AnalysisStatus, RESUME_ERROR_CODES } from '../modules/resumes';
@@ -70,10 +86,10 @@ describe('Phase 4 Milestone 1 - resumes module scaffold', () => {
     expect(res.body?.error?.code).toBe('VALIDATION_ERROR');
   });
 
-  it('GET /api/v1/resumes as STUDENT -> 501 stub (auth passed)', async () => {
+  it('GET /api/v1/resumes as STUDENT returns resume list', async () => {
     const res = await request(app).get('/api/v1/resumes').set('x-test-role', Role.STUDENT);
-    expect(res.status).toBe(501);
-    expect(res.body?.error?.code).toBe('NOT_IMPLEMENTED');
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body?.data)).toBe(true);
   });
 
   it('exports analysis status enum and resume error codes', () => {
