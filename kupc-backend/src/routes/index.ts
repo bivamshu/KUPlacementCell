@@ -2,14 +2,14 @@ import { Router } from 'express';
 import { config } from '../config/config';
 import { authRateLimiter } from '../middleware/rateLimiter';
 import { authRouter } from '../modules/auth';
-import adminRouter from './admin';
-import jobsRouter from './jobs';
-import rbacRouter from './rbac';
-import studentRouter from './student';
-import { successResponse } from '../utils/apiResponse';
+import { jobsRouter } from '../modules/jobs';
 import { resumesRouter } from '../modules/resumes';
 import { studentsRouter } from '../modules/students';
 import { companiesRouter } from '../modules/companies';
+import adminRouter from './admin';
+import rbacRouter from './rbac';
+import studentRouter from './student';
+import { successResponse } from '../utils/apiResponse';
 
 const router = Router();
 

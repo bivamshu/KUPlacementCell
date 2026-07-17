@@ -14,6 +14,7 @@
     "test:phase3": "jest --runInBand src/__tests__/phase3",
     "test:phase4": "jest --runInBand src/__tests__/phase4",
     "test:phase5": "jest --runInBand src/__tests__/phase5",
+    "test:phase6": "jest --runInBand --forceExit src/__tests__/phase6",
     "worker:resumes": "ts-node-dev --respawn --transpile-only src/workers/resumeAnalysis.worker.ts"
   },
   "keywords": [],

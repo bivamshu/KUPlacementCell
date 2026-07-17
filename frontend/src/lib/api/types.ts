@@ -1,6 +1,6 @@
 /**
- * Shared DTO types matching kupc-backend Phase 2–5 API contracts.
- * Wire format is snake_case for HTTP bodies/responses (auth + profiles + resumes).
+ * Shared DTO types matching kupc-backend Phase 2–6 API contracts.
+ * Wire format is snake_case for HTTP bodies/responses (auth + profiles + resumes + jobs).
  */
 
 export type Role = 'STUDENT' | 'COMPANY' | 'ADMIN';
@@ -214,4 +214,66 @@ export type ResumeAnalysis = {
   status: AnalysisStatus;
   error_message?: string | null;
   result?: AnalysisResult | null;
+};
+
+// ── Phase 6 — Jobs ─────────────────────────────────────────────────────
+
+export type JobType = 'internship' | 'full_time' | 'part_time';
+export type JobStatus = 'open' | 'closed' | 'draft';
+
+export type JobDto = {
+  id: string;
+  company_id: string;
+  title: string;
+  description: string;
+  location: string | null;
+  job_type: JobType | null;
+  min_cgpa: number | null;
+  status: JobStatus;
+  created_at: string;
+  updated_at: string;
+};
+
+export type JobCompanySummary = {
+  id: string;
+  company_name: string;
+  logo_url: string | null;
+  industry: string | null;
+  website: string | null;
+};
+
+export type JobFeedCard = JobDto & {
+  company: JobCompanySummary;
+  is_saved: boolean;
+};
+
+/** POST /jobs body (snake_case). Status is always draft on create. */
+export type CreateJobBody = {
+  title: string;
+  description: string;
+  location?: string | null;
+  job_type?: JobType | null;
+  min_cgpa?: number | null;
+};
+
+/** PATCH /jobs/me/:id body (snake_case). Status only via publish/close. */
+export type UpdateJobBody = {
+  title?: string;
+  description?: string;
+  location?: string | null;
+  job_type?: JobType | null;
+  min_cgpa?: number | null;
+};
+
+export type JobFeedQuery = {
+  q?: string;
+  job_type?: JobType;
+  location?: string;
+  min_cgpa?: number;
+  limit?: number;
+  offset?: number;
+};
+
+export type SavedToggleResult = {
+  saved: boolean;
 };

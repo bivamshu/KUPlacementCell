@@ -66,7 +66,7 @@ Tokens are stored in `localStorage` as `kupc_access` / `kupc_refresh`.
 | Company profile (`/app/company-profile`) | **Live** — GET/PATCH/logo + verification badge |
 | Resume analyzer (`/app/resume`) | **Live** — upload, poll analysis, list, delete |
 | Settings sign-out | **Live** — clears tokens |
-| Discover / matches / chat / saved / kanban / admin approval / analytics | **Mock** — `// MOCK: Phase 6+` in `prototypeScreens.tsx` |
+| Discover / matches / chat / saved / kanban / admin approval / analytics | **Mock** — Phase 6+ (jobs API scaffold B1/F1 landed; UI wiring F2–F5 pending) |
 
 ## Auth flow
 

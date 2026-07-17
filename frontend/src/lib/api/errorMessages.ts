@@ -20,6 +20,13 @@ const CODE_MESSAGES: Record<string, string> = {
   RESUME_INVALID_TYPE: 'Only PDF resumes are allowed.',
   RESUME_TOO_LARGE: 'Resume exceeds the maximum size.',
   STORAGE_UPLOAD_FAILED: 'Upload failed. Please try again.',
+  PENDING_VERIFICATION: 'Your company account is still pending verification.',
+  JOB_NOT_FOUND: 'That job was not found.',
+  JOB_FORBIDDEN: 'You cannot change another company’s job.',
+  INVALID_JOB_PAYLOAD: 'Please check the job fields and try again.',
+  INVALID_JOB_TRANSITION: 'That status change is not allowed for this job.',
+  SAVED_JOB_NOT_FOUND: 'That job is not in your saved list.',
+  NOT_IMPLEMENTED: 'This jobs feature is not available yet.',
 };
 
 export function messageFromError(error: unknown, fallback = 'Something went wrong. Please try again.'): string {
