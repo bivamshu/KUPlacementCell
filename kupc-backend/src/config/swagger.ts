@@ -7,7 +7,7 @@ const swaggerDefinition = {
     title: 'KUPC API',
     version: config.api.version,
     description:
-      'OpenAPI documentation for KUPC backend — Phase 2 auth, Phase 4 resume upload and analysis.'
+      'OpenAPI documentation for KUPC backend — Phase 2 auth, Phase 4 resume upload and analysis, Phase 5 student and company profiles.'
   },
   servers: [
     {
@@ -73,6 +73,102 @@ const swaggerDefinition = {
           status: { type: 'string', enum: ['pending', 'processing', 'completed', 'failed'] },
           error_message: { type: 'string', nullable: true },
           result: { type: 'object', nullable: true }
+        }
+      },
+      StudentProfile: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          ku_id: { type: 'string', example: '078bct000' },
+          full_name: { type: 'string' },
+          graduation_year: { type: 'integer', nullable: true },
+          department: { type: 'string', nullable: true },
+          phone: { type: 'string', nullable: true },
+          degree: { type: 'string', nullable: true },
+          cgpa: { type: 'number', nullable: true, minimum: 0, maximum: 4 },
+          bio: { type: 'string', nullable: true },
+          profile_picture_url: { type: 'string', nullable: true },
+          resume_id: { type: 'string', format: 'uuid', nullable: true },
+          active_resume: {
+            type: 'object',
+            nullable: true,
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              file_name: { type: 'string' },
+              uploaded_at: { type: 'string', format: 'date-time' }
+            }
+          },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' }
+        }
+      },
+      StudentPublicCard: {
+        type: 'object',
+        description: 'Public student card — never includes phone or ku_id',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          full_name: { type: 'string' },
+          graduation_year: { type: 'integer', nullable: true },
+          department: { type: 'string', nullable: true },
+          degree: { type: 'string', nullable: true },
+          cgpa: { type: 'number', nullable: true },
+          bio: { type: 'string', nullable: true },
+          profile_picture_url: { type: 'string', nullable: true },
+          resume_id: { type: 'string', format: 'uuid', nullable: true },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' }
+        }
+      },
+      UpdateStudentProfile: {
+        type: 'object',
+        minProperties: 1,
+        properties: {
+          full_name: { type: 'string', minLength: 2, maxLength: 100 },
+          phone: { type: 'string', nullable: true },
+          degree: { type: 'string', nullable: true },
+          bio: { type: 'string', nullable: true, maxLength: 2000 },
+          department: { type: 'string', nullable: true },
+          cgpa: { type: 'number', nullable: true, minimum: 0, maximum: 4 },
+          graduation_year: { type: 'integer', nullable: true, minimum: 2000, maximum: 2100 }
+        }
+      },
+      CompanyProfile: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          company_name: { type: 'string' },
+          website: { type: 'string', nullable: true },
+          industry: { type: 'string', nullable: true },
+          description: { type: 'string', nullable: true },
+          logo_url: { type: 'string', nullable: true },
+          verification_status: { type: 'string', enum: ['pending', 'approved', 'rejected'] },
+          verified_at: { type: 'string', format: 'date-time', nullable: true },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' }
+        }
+      },
+      CompanyPublicCard: {
+        type: 'object',
+        description: 'Public company card — approved companies only',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          company_name: { type: 'string' },
+          website: { type: 'string', nullable: true },
+          industry: { type: 'string', nullable: true },
+          description: { type: 'string', nullable: true },
+          logo_url: { type: 'string', nullable: true },
+          created_at: { type: 'string', format: 'date-time' }
+        }
+      },
+      UpdateCompanyProfile: {
+        type: 'object',
+        minProperties: 1,
+        description: 'verification_status and logo_url are not settable via PATCH',
+        properties: {
+          company_name: { type: 'string', minLength: 2, maxLength: 150 },
+          website: { type: 'string', format: 'uri', nullable: true },
+          industry: { type: 'string', nullable: true, maxLength: 100 },
+          description: { type: 'string', nullable: true, maxLength: 2000 }
         }
       }
     }
@@ -438,6 +534,290 @@ const swaggerDefinition = {
             }
           },
           '404': { description: 'RESUME_NOT_FOUND or ANALYSIS_NOT_FOUND' }
+        }
+      }
+    },
+    '/students/me': {
+      get: {
+        tags: ['Students'],
+        summary: 'Get authenticated student profile',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Student profile with optional active resume summary',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/StudentProfile' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '401': { description: 'MISSING_TOKEN or INVALID_TOKEN' },
+          '403': { description: 'INSUFFICIENT_ROLE (non-student JWT)' },
+          '404': { description: 'STUDENT_NOT_FOUND' }
+        }
+      },
+      patch: {
+        tags: ['Students'],
+        summary: 'Update authenticated student profile',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/UpdateStudentProfile' }
+            }
+          }
+        },
+        responses: {
+          '200': {
+            description: 'Updated profile',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/StudentProfile' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '400': { description: 'VALIDATION_ERROR (e.g. cgpa outside 0–4, empty body)' },
+          '403': { description: 'INSUFFICIENT_ROLE' },
+          '404': { description: 'STUDENT_NOT_FOUND' }
+        }
+      }
+    },
+    '/students/me/avatar': {
+      post: {
+        tags: ['Students'],
+        summary: 'Upload student avatar image (JPEG/PNG/WebP, max 2 MB)',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: ['file'],
+                properties: {
+                  file: { type: 'string', format: 'binary', description: 'Avatar image file' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          '200': {
+            description: 'Avatar stored; profile with new profile_picture_url',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/StudentProfile' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '400': { description: 'INVALID_FILE_TYPE or FILE_TOO_LARGE' },
+          '403': { description: 'INSUFFICIENT_ROLE' },
+          '429': { description: 'Upload rate limit exceeded' }
+        }
+      }
+    },
+    '/students/{id}': {
+      get: {
+        tags: ['Students'],
+        summary: 'Get public student card (any authenticated role)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        responses: {
+          '200': {
+            description: 'Public card — no phone or ku_id',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/StudentPublicCard' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '400': { description: 'VALIDATION_ERROR (non-UUID id)' },
+          '404': { description: 'STUDENT_NOT_FOUND' }
+        }
+      }
+    },
+    '/companies/me': {
+      get: {
+        tags: ['Companies'],
+        summary: 'Get authenticated company profile (includes verification state)',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Company profile including verification_status and verified_at',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/CompanyProfile' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '401': { description: 'MISSING_TOKEN or INVALID_TOKEN' },
+          '403': { description: 'INSUFFICIENT_ROLE (non-company JWT)' },
+          '404': { description: 'COMPANY_NOT_FOUND' }
+        }
+      },
+      patch: {
+        tags: ['Companies'],
+        summary: 'Update authenticated company profile (verification_status not settable)',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/UpdateCompanyProfile' }
+            }
+          }
+        },
+        responses: {
+          '200': {
+            description: 'Updated profile',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/CompanyProfile' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '400': { description: 'VALIDATION_ERROR (invalid website URL, empty body)' },
+          '403': { description: 'INSUFFICIENT_ROLE' },
+          '404': { description: 'COMPANY_NOT_FOUND' }
+        }
+      }
+    },
+    '/companies/me/logo': {
+      post: {
+        tags: ['Companies'],
+        summary: 'Upload company logo image (JPEG/PNG/WebP, max 2 MB)',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'multipart/form-data': {
+              schema: {
+                type: 'object',
+                required: ['file'],
+                properties: {
+                  file: { type: 'string', format: 'binary', description: 'Logo image file' }
+                }
+              }
+            }
+          }
+        },
+        responses: {
+          '200': {
+            description: 'Logo stored; profile with new logo_url',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/CompanyProfile' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '400': { description: 'INVALID_FILE_TYPE or FILE_TOO_LARGE' },
+          '403': { description: 'INSUFFICIENT_ROLE' },
+          '429': { description: 'Upload rate limit exceeded' }
+        }
+      }
+    },
+    '/companies/{id}': {
+      get: {
+        tags: ['Companies'],
+        summary: 'Get public company card (approved companies only)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        responses: {
+          '200': {
+            description: 'Public card without verification internals',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/CompanyPublicCard' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '400': { description: 'VALIDATION_ERROR (non-UUID id)' },
+          '404': { description: 'COMPANY_NOT_FOUND (unknown, pending, or rejected company)' }
         }
       }
     }

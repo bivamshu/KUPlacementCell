@@ -8,6 +8,8 @@ import rbacRouter from './rbac';
 import studentRouter from './student';
 import { successResponse } from '../utils/apiResponse';
 import { resumesRouter } from '../modules/resumes';
+import { studentsRouter } from '../modules/students';
+import { companiesRouter } from '../modules/companies';
 
 const router = Router();
 
@@ -29,5 +31,7 @@ router.use('/admin', adminRouter);
 router.use('/jobs', jobsRouter);
 router.use('/rbac', rbacRouter);
 router.use('/resumes', resumesRouter);
+router.use('/students', studentsRouter);
+router.use('/companies', companiesRouter);
 
 export default router;
