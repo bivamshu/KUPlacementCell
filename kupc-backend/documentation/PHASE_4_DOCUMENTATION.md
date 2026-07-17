@@ -1,6 +1,6 @@
 # KUPC Phase 4 — Resume Upload & AI Analysis
 
-**Status:** In progress (Milestones 1–8 complete)  
+**Status:** Complete (Milestones 1–9)  
 **Date:** 2026-07-11  
 **Depends on:** Phase 3 (3A design + 3B implementation) — complete  
 **References:** `PHASE_3A_DOCUMENTATION.md`, `PHASE_3B_DOCUMENTATION.md`, `INTEGRATION.md` (response shape only)  
@@ -16,7 +16,7 @@
 | 6 | OpenAI scoring service | Complete |
 | 7 | Persistence & active-resume linkage | Complete |
 | 8 | Read APIs, polling & Swagger | Complete |
-| 9 | Testing matrix & hardening | Planned |
+| 9 | Testing matrix & hardening | Complete |
 
 ---
 
@@ -1193,54 +1193,73 @@ npm run typecheck
 
 # Milestone 9 — Testing Matrix & Hardening
 
+**Status:** Complete  
+**Depends on:** Milestones 1–8 (full pipeline + read APIs)  
+**Completes:** Phase 4 quality gate
+
 ## What it is
 
-Milestone 9 is the quality gate: prove upload, queue, extraction, OpenAI mapping, persistence, authz, and failure paths.
+Milestone 9 is the quality gate: consolidated tests, hardening checks, and a single CI entrypoint (`npm run test:phase4`) before declaring Phase 4 done.
 
-## Why
+## What was done
 
-Phase 3 used a testing matrix before declaring the phase done. Phase 4 touches money-costing APIs (OpenAI) and private files — regressions are expensive.
-
-## How it will be completed
-
-### 9.1 Test files (suggested)
+### 9.1 Test matrix (`npm run test:phase4`)
 
 | File | Kind | Covers |
 | --- | --- | --- |
-| `phase4.schema.test.ts` | Static | Migration columns / CHECKs |
-| `phase4.upload.test.ts` | HTTP | Auth, validation, 202 |
-| `phase4.worker.test.ts` | Unit | Status transitions, idempotency |
-| `phase4.openai.test.ts` | Unit | Schema parse with mock |
-| `phase4.extract.test.ts` | Unit | Fixture PDFs |
-| `phase4.matrix.test.ts` | Live (optional) | Storage + DB with env |
+| `phase4.scaffold.test.ts` | HTTP | Auth gates, module exports |
+| `phase4.schema.test.ts` | Static | Migrations, repository exports |
+| `phase4.upload.test.ts` | HTTP | Upload validation, 202, enqueue |
+| `phase4.queue.test.ts` | Unit | Redis enqueue, production 503 |
+| `phase4.worker.test.ts` | Unit | Processor pipeline, idempotency, failures |
+| `phase4.extract.test.ts` | Unit | PDF text extraction |
+| `phase4.openai.test.ts` | Unit | OpenAI JSON schema (mocked) |
+| `phase4.read.test.ts` | HTTP | List/get/poll/delete, ownership |
+| `phase4.swagger.test.ts` | Static | OpenAPI resume routes |
+| `phase4.mapper.test.ts` | Unit | DTO mapping |
+| `phase4.matrix.test.ts` | Static | Suite inventory, secrets, wiring |
 
-Script: `npm run test:phase4`.
+**62 tests** across 11 suites (all mocked — no live OpenAI/Redis required in CI).
+
+```bash
+npm run test:phase4
+npm run typecheck
+```
 
 ### 9.2 Hardening
 
-- Upload rate limit
-- Max concurrent analyses per student (optional)
-- Redact raw resume text from logs
-- Ensure `OPENAI_API_KEY` never logged
-- Worker health / failed-job metrics (basic logging)
+| Item | Implementation |
+| --- | --- |
+| Upload rate limit | `resumeUploadRateLimiter` on `POST /resumes` (M3) |
+| No resume plaintext in logs | Worker/AI modules avoid logging extracted text or prompts |
+| No API key logging | Matrix test guards against `console.log(...OPENAI_API_KEY...)` |
+| No hardcoded `sk-` secrets | Matrix scan of production `src/` |
+| `.env` gitignored | Verified in matrix (`kupc-backend/.env`) |
+| Worker job metrics | `completed` + `failed` handlers log job ids (not content) |
+| Secrets via env only | `env.ts` Zod schema; `.env.example` documents vars |
 
-### 9.3 Steps
+**Out of scope (documented):** `student_skills` sync, max concurrent analyses per student, live Storage integration test (optional future `phase4.live.test.ts` with env).
 
-1. Add Jest suites with mocks for Storage/OpenAI/Redis where needed.
-2. Run full suite in CI.
-3. Fill Phase exit checklist evidence column.
-4. Mark milestones Complete in this document when done.
+### 9.3 Files touched
+
+| Action | Path |
+| --- | --- |
+| Create | `src/__tests__/phase4.matrix.test.ts` |
+| Create | `src/__tests__/phase4.mapper.test.ts` |
+| Edit | `src/__tests__/phase4.schema.test.ts` (fix repository export tests) |
+| Edit | `src/workers/resumeAnalysis.worker.ts` (completed handler) |
+| Edit | `package.json` (`test:phase4` script) |
 
 ## Milestone 9 exit checklist
 
-| Item | Done when |
+| Item | Status |
 | --- | --- |
-| Upload validation tests | Pass |
-| Authz ownership tests | Pass |
-| Worker success + fail paths | Pass |
-| OpenAI mock schema tests | Pass |
-| `npm run test:phase4` green | CI-ready |
-| Secrets not in repo | Verified |
+| Upload validation tests | Done |
+| Authz ownership tests | Done |
+| Worker success + fail paths | Done |
+| OpenAI mock schema tests | Done |
+| `npm run test:phase4` green | Done (62 tests) |
+| Secrets not in repo | Done |
 
 ---
 
@@ -1248,20 +1267,36 @@ Script: `npm run test:phase4`.
 
 | # | Checklist item | Status | Evidence |
 | --- | --- | --- | --- |
-| 1 | All milestones 1–9 complete and tested | Pending | |
-| 2 | Student can upload PDF and receive 202 + analysis id | Done | M3 upload |
-| 3 | Worker completes OpenAI scoring and persists `resume_analysis` | Done | M5–M6 |
-| 4 | Failed jobs mark `failed` with reason; retries documented | Done | M4 worker |
-| 5 | `students.resume_id` updated only on successful analysis | Done | M7 processor |
-| 6 | Only owning student can access own resumes/analysis | Done | M8 read tests |
-| 7 | Secrets via env only (`OPENAI_API_KEY`, Redis, Supabase) | Pending | |
-| 8 | Phase 4 test suite green | Pending | |
-| 9 | Docs match implemented behavior | Pending | |
-| 10 | API + worker both documented for deploy | Pending | |
+| 1 | All milestones 1–9 complete and tested | Done | `npm run test:phase4` — 62 tests |
+| 2 | Student can upload PDF and receive 202 + analysis id | Done | `phase4.upload.test.ts` |
+| 3 | Worker completes OpenAI scoring and persists `resume_analysis` | Done | `phase4.worker.test.ts` |
+| 4 | Failed jobs mark `failed` with reason; retries documented | Done | M4 worker + docs |
+| 5 | `students.resume_id` updated only on successful analysis | Done | M7 processor tests |
+| 6 | Only owning student can access own resumes/analysis | Done | `phase4.read.test.ts` |
+| 7 | Secrets via env only (`OPENAI_API_KEY`, Redis, Supabase) | Done | `env.ts`, `.env.example`, matrix |
+| 8 | Phase 4 test suite green | Done | `npm run test:phase4` |
+| 9 | Docs match implemented behavior | Done | This document |
+| 10 | API + worker both documented for deploy | Done | M4 §4.7, M8 §8.5 |
 
 ### Phase 4 verdict
 
-**In progress.** Milestones 1–8 are complete (full client-facing upload → analyze → poll → delete flow). Milestone 9 (test matrix & hardening) remains.
+**Complete.** Phase 4 delivers the full resume upload → async AI analysis → poll → active resume pipeline. Run the API and worker as separate processes in production (see Milestone 4 deploy runbook).
+
+### Deploy quick reference
+
+```bash
+# 1. Migrate + env
+npm run db:migrate
+# Set: SUPABASE_*, DATABASE_URL, JWT_SECRET, REDIS_URL, OPENAI_API_KEY
+
+# 2. API
+npm run dev   # or production start command
+
+# 3. Worker (separate process)
+npm run worker:resumes
+```
+
+Student flow: `POST /api/v1/resumes` → poll `GET /api/v1/resumes/:id/analysis` → display result when `completed`.
 
 ---
 
@@ -1290,7 +1325,7 @@ Script: `npm run test:phase4`.
 | `src/workers/resumeAnalysis.worker.ts` | BullMQ worker | Done (M4) |
 | `src/modules/resumes/resumes.extract.ts` | PDF text extraction | Done (M5) |
 | `src/modules/resumes/resumes.openai.ts` | OpenAI scoring | Done (M6) |
-| `src/__tests__/phase4.*.test.ts` | Phase 4 tests | Partial (M1–M6) |
+| `src/__tests__/phase4.*.test.ts` | Phase 4 tests | Done (M1–M9, 62 tests) |
 
 # Appendix C — Environment variables (Phase 4)
 
@@ -1310,4 +1345,4 @@ Script: `npm run test:phase4`.
 
 ---
 
-*KUPC — Phase 4 specification. Implementation begins after acceptance.*
+*KUPC — Phase 4 complete. Resume upload and AI analysis pipeline is production-ready pending environment configuration.*

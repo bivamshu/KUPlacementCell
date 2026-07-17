@@ -12,6 +12,7 @@
     "db:migrate": "node scripts/apply-migrations.mjs",
     "db:seed": "tsx scripts/seed.ts",
     "test:phase3": "jest --runInBand src/__tests__/phase3",
+    "test:phase4": "jest --runInBand src/__tests__/phase4",
     "worker:resumes": "ts-node-dev --respawn --transpile-only src/workers/resumeAnalysis.worker.ts"
   },
   "keywords": [],

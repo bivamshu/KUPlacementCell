@@ -41,6 +41,14 @@ async function startWorker(): Promise<Worker<ResumeAnalysisJobPayload>> {
     concurrency: env.RESUME_ANALYSIS_QUEUE_CONCURRENCY
   });
 
+  worker.on('completed', (job) => {
+    log('Job completed', {
+      jobId: job.id,
+      analysisId: job.data.analysisId,
+      resumeId: job.data.resumeId
+    });
+  });
+
   worker.on('failed', async (job, error) => {
     if (!job) {
       return;

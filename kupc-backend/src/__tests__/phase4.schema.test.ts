@@ -46,13 +46,15 @@ describe('Phase 4 Milestone 2 - resume_analysis schema migration', () => {
   });
 });
 
-const source  = fs.readFileSync(
-    path.join(__dirname, '..', 'database', 'resumes.repository.ts'),
-    'utf8'
-);
+describe('Phase 4 Milestone 2 - resumes repository exports', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'database', 'resumes.repository.ts'), 'utf8');
 
-expect(source).toContain('createAnalysis');
-expect(source).toContain('updateAnalysisStatus');
-expect(source).toContain('completeAnalysis');
-expect(source).toContain('failAnalysis');
-expect(source).toContain('findAnalysisById');
+  it('exports analysis lifecycle methods', () => {
+    expect(source).toContain('createAnalysis');
+    expect(source).toContain('updateAnalysisStatus');
+    expect(source).toContain('completeAnalysis');
+    expect(source).toContain('failAnalysis');
+    expect(source).toContain('findAnalysisById');
+    expect(source).toContain('findAnalysisByResumeId');
+  });
+});
