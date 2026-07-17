@@ -1,6 +1,6 @@
 # KUPC Phase 4 — Resume Upload & AI Analysis
 
-**Status:** Specification (Planned)  
+**Status:** In progress (Milestones 1–4 complete)  
 **Date:** 2026-07-11  
 **Depends on:** Phase 3 (3A design + 3B implementation) — complete  
 **References:** `PHASE_3A_DOCUMENTATION.md`, `PHASE_3B_DOCUMENTATION.md`, `INTEGRATION.md` (response shape only)  
@@ -9,9 +9,9 @@
 | Milestone | Topic | Status |
 | --- | --- | --- |
 | 1 | Contracts & module scaffold | Complete |
-| 2 | Schema & repository extensions | Planned |
-| 3 | Supabase Storage & upload pipeline | Planned |
-| 4 | Async worker infrastructure | Planned |
+| 2 | Schema & repository extensions | Complete |
+| 3 | Supabase Storage & upload pipeline | Complete |
+| 4 | Async worker infrastructure | Complete |
 | 5 | PDF text extraction | Planned |
 | 6 | OpenAI scoring service | Planned |
 | 7 | Persistence & active-resume linkage | Planned |
@@ -228,6 +228,7 @@ Defined in `resumes.constants.ts` for later milestones; do not invent new string
 | `RESUME_EMPTY_TEXT` | PDF yielded no extractable text (M5) |
 | `ANALYSIS_NOT_FOUND` | No analysis row for resume |
 | `ANALYSIS_NOT_READY` | Optional: client expected completed too early |
+| `RESUME_QUEUE_UNAVAILABLE` | Redis/BullMQ unavailable in production (M4) |
 
 ### 1.5 Module scaffold
 
@@ -331,180 +332,341 @@ curl -i -X POST http://localhost:5000/api/v1/resumes \
 
 # Milestone 2 — Schema & Repository Extensions
 
+**Status:** Complete  
+**Depends on:** Phase 4 Milestone 1 (contracts + resumes module scaffold)  
+**Does not include:** Storage upload, BullMQ, PDF parse, OpenAI (Milestones 3–6)
+
 ## What it is
 
-Milestone 2 extends Phase 3 `resume_analysis` so the async pipeline can track lifecycle and store richer OpenAI output. It also extends `resumes.repository.ts`.
+Milestone 2 extends Phase 3 `resume_analysis` so the async pipeline can track job lifecycle (`pending` → `processing` → `completed` | `failed`) and store richer OpenAI output (grade, score breakdown, strengths, suggestions, issues). It also extends `resumes.repository.ts` with typed methods for creating, updating, completing, and failing analysis rows.
 
-## Why it is needed
-
-Phase 3 created:
+Phase 3 only had:
 
 - `resumes(id, student_id, file_url, file_name, uploaded_at)`
 - `resume_analysis(id, resume_id, extracted_skills, ats_score, summary, analyzed_at)`
 
-That is enough for a completed score, but **not** for pending/failed jobs, error messages, grade, breakdown, strengths, or suggestions. Without status columns, the client cannot poll meaningfully.
+That is enough for a finished score, but not for polling, failures, or structured feedback.
 
-## How it will be completed
+## Why it was done
 
-### 2.1 Migration (new file)
+Without status and result columns:
 
-Suggested path:
+- The client cannot poll meaningfully after upload
+- The worker cannot mark a job as in-progress or failed
+- Grade, breakdown, strengths, and suggestions have nowhere typed to live
 
-```text
-supabase/migrations/20260711000000_phase4_resume_analysis.sql
-```
+Keeping all table access in the repository preserves the Phase 3 boundary: controllers/services never call `supabaseAdmin.from(...)`.
 
-Add to `resume_analysis` (idempotent `ADD COLUMN IF NOT EXISTS`):
+## What was done
+
+### 2.1 Migration
+
+File: `supabase/migrations/20260711000000_phase4_resume_analysis.sql`
+
+Added to `public.resume_analysis` (idempotent `ADD COLUMN IF NOT EXISTS`):
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `status` | TEXT NOT NULL DEFAULT `'pending'` | CHECK: pending, processing, completed, failed |
-| `error_message` | TEXT | Set when `failed` |
-| `grade` | TEXT | e.g. A/B/C/D |
-| `score_breakdown` | JSONB | Category scores |
-| `strengths` | JSONB | Array of strings |
-| `suggestions` | JSONB | Array of suggestion objects |
-| `issues_identified` | JSONB | Array of strings |
-| `raw_response` | JSONB | Optional full OpenAI payload for debug |
-| `model` | TEXT | Model id used |
-| `started_at` | TIMESTAMPTZ | When processing began |
-| `completed_at` | TIMESTAMPTZ | When finished |
+| `status` | `TEXT NOT NULL DEFAULT 'pending'` | CHECK: `pending`, `processing`, `completed`, `failed` |
+| `error_message` | `TEXT` | Set when `failed` |
+| `grade` | `TEXT` | e.g. A/B/C/D |
+| `score_breakdown` | `JSONB` | Category scores |
+| `strengths` | `JSONB` | Array of strings |
+| `suggestions` | `JSONB` | Array of suggestion objects |
+| `issues_identified` | `JSONB` | Issues from OpenAI |
+| `model` | `TEXT` | Model id used |
+| `started_at` | `TIMESTAMPTZ` | When processing began |
+| `completed_at` | `TIMESTAMPTZ` | When finished |
 
-Keep existing `extracted_skills`, `ats_score`, `summary`, `analyzed_at`.
+Kept existing columns: `extracted_skills`, `ats_score`, `summary`, `analyzed_at`.
 
-Optional (if skill containment queries are needed):
+Also created:
 
-```sql
-CREATE INDEX IF NOT EXISTS idx_resume_analysis_skills
-  ON public.resume_analysis USING gin (extracted_skills);
+- Constraint `resume_analysis_status_check`
+- Index `idx_resume_analysis_skills` (GIN on `extracted_skills`)
+- Index `idx_resume_analysis_resume_id_status` on (`resume_id`, `status`)
+
+Follow-up fix migration: `supabase/migrations/20260711000001_phase4_fix_issues_identified.sql` (typo rename `issues_idetified` → `issues_identified`).
+
+### 2.2 Registered in apply script
+
+`scripts/apply-migrations.mjs` now includes (after Phase 3):
+
+```text
+20260711000000_phase4_resume_analysis.sql
+20260711000001_phase4_fix_issues_identified.sql
 ```
 
-Register the migration in `scripts/apply-migrations.mjs`.
+Applied with:
 
-### 2.2 Repository extensions
+```bash
+npm run db:migrate
+```
 
-Extend `src/database/resumes.repository.ts`:
+### 2.3 Repository extensions
 
-- `createAnalysis` — accept `status: 'pending'`
-- `updateAnalysisStatus` — pending → processing
-- `completeAnalysis` — write scores + JSON fields + `completed`
-- `failAnalysis` — write `error_message` + `failed`
-- `findAnalysisById` / keep `findAnalysisByResumeId` (latest by `analyzed_at` or `completed_at`)
+File: `src/database/resumes.repository.ts`
 
-Do not add `.from('resumes')` outside `src/database/` (Phase 3 boundary test must still pass).
+| Method | Purpose |
+| --- | --- |
+| `createAnalysis` | Insert analysis with `status: 'pending'` (default) |
+| `updateAnalysisStatus` | `pending` → `processing` (sets `started_at`) |
+| `completeAnalysis` | Write scores/JSON fields + `status: 'completed'` |
+| `failAnalysis` | Write `error_message` + `status: 'failed'` |
+| `findAnalysisById` | Lookup by analysis id |
+| `findAnalysisByResumeId` | Latest analysis for a resume (by `analyzed_at`) |
 
-### 2.3 Steps
+Existing resume CRUD (`create`, `findById`, `listByStudent`, `deleteById`) remains. Optional `id` on `create` supports pre-generated UUIDs for Storage path alignment in Milestone 3.
 
-1. Write migration SQL with CHECKs and defaults.
-2. Apply via `npm run db:migrate`.
-3. Extend repository types and methods.
-4. Add static schema test assertions for new columns (Phase 4 test file in Milestone 9).
-5. Update this doc’s schema section if columns change during implementation.
+Conventions match Phase 3:
+
+- Always `supabaseAdmin`
+- camelCase inputs → snake_case columns
+- Typed `ResumeAnalysisRecord` / `ResumeRecord`
+- `if (error) throw error` — never swallow
+
+### 2.4 Tests
+
+| File | Covers |
+| --- | --- |
+| `src/__tests__/phase4.schema.test.ts` | Migration defines required columns, status CHECK, GIN index; repository exports required methods |
+| `src/__tests__/phase3.boundary.test.ts` | Still green — no table `.from(...)` outside `src/database/` |
+
+**Verify:**
+
+```bash
+npm run db:migrate
+npm test -- src/__tests__/phase4
+npm test -- src/__tests__/phase3.boundary.test.ts
+npm run typecheck
+```
+
+### 2.5 Files touched
+
+| Action | Path |
+| --- | --- |
+| Create | `supabase/migrations/20260711000000_phase4_resume_analysis.sql` |
+| Create | `supabase/migrations/20260711000001_phase4_fix_issues_identified.sql` |
+| Edit | `scripts/apply-migrations.mjs` |
+| Edit | `src/database/resumes.repository.ts` |
+| Create | `src/__tests__/phase4.schema.test.ts` |
+
+### 2.6 Out of scope for Milestone 2
+
+| Concern | Milestone |
+| --- | --- |
+| Multer, PDF validation, Supabase Storage bucket | 3 |
+| Real `resumes.service.upload` writing rows | 3 |
+| BullMQ enqueue / worker | 4 |
+| PDF text extraction | 5 |
+| OpenAI scoring | 6 |
+| Set `students.resume_id` on success | 7 |
 
 ## Milestone 2 exit checklist
 
-| Item | Done when |
+| Item | Status |
 | --- | --- |
-| Migration applied | New columns exist in Supabase |
-| Status CHECK enforced | Invalid status → Postgres error |
-| Repository methods cover pending/complete/fail | Typed + throw on error |
-| Boundary rule preserved | No table access outside repositories |
-| `apply-migrations.mjs` lists new file | Ordered after Phase 3 migrations |
+| Migration applied — new columns exist in Supabase | Done |
+| Status CHECK enforced (`pending` / `processing` / `completed` / `failed`) | Done |
+| Repository methods cover pending / processing / complete / fail | Done |
+| Boundary rule preserved (no table access outside repositories) | Done |
+| `apply-migrations.mjs` lists Phase 4 migration(s) after Phase 3 | Done |
+| Static schema tests pass | Done |
+| Typo fix for `issues_identified` applied on live DB | Done |
+
+**What comes next:** Milestone 3 — Supabase Storage & upload pipeline (accept PDF, store object, create `resumes` + pending `resume_analysis`, return 202).
 
 ---
-
 # Milestone 3 — Supabase Storage & Upload Pipeline
+
+**Status:** Complete  
+**Depends on:** Phase 4 Milestone 2 (schema + repository extensions)  
+**Does not include:** PDF extraction, OpenAI (Milestones 5–6); BullMQ wired in Milestone 4
 
 ## What it is
 
-Milestone 3 implements the **synchronous half** of the pipeline: accept a PDF, store it, create DB rows, enqueue analysis (enqueue wiring finalized in Milestone 4).
+Milestone 3 implements the **synchronous half** of the pipeline: accept a PDF via multipart upload, store it in Supabase Storage, create `resumes` + pending `resume_analysis` rows, and return **202 Accepted**. BullMQ enqueue is wired in Milestone 4.
 
 ## Why it matters
 
-`resumes.file_url` is useless without a real object store. Phase 2 deliberately deferred file upload; Phase 4 owns student resume storage. Validation here prevents garbage files from reaching OpenAI.
+`resumes.file_url` is useless without a real object store. Validation here prevents non-PDF and oversized files from reaching Storage or the async worker.
 
-## How it will be completed
+## What was done
 
-### 3.1 Storage bucket
+### 3.1 Storage bucket migration
 
-- Bucket name: `resumes` (private)
-- Object key pattern: `{studentId}/{resumeId}/{originalFileName}`
-- Access: service role for upload/download in API/worker; students never get the service key
-- Signed URLs for download if the client needs a temporary link (optional in this phase)
+File: `supabase/migrations/20260712000000_phase4_resume_storage_bucket.sql`
 
-### 3.2 Upload validation
+- Bucket id/name: `resumes` (private, `public = false`)
+- `file_size_limit`: 5 MB (5242880)
+- `allowed_mime_types`: `application/pdf` only
+- Idempotent `ON CONFLICT DO UPDATE` for re-runs
 
-| Rule | Value |
+Registered in `scripts/apply-migrations.mjs` after Phase 4 schema migrations. Apply with:
+
+```bash
+npm run db:migrate
+```
+
+### 3.2 Storage helper
+
+File: `src/config/resumeStorage.ts`
+
+| Function | Purpose |
 | --- | --- |
-| MIME | `application/pdf` only |
-| Extension | `.pdf` |
-| Max size | 5 MB (configurable via env) |
-| Auth | JWT + role `STUDENT` |
-| Ownership | `student_id = req.user.id` |
+| `buildResumeObjectPath(studentId, resumeId, fileName)` | `{studentId}/{resumeId}/{fileName}` |
+| `resumeStorage.uploadPdf(path, buffer)` | Upload via `supabaseAdmin.storage` |
+| `resumeStorage.deleteObject(path)` | Orphan cleanup on DB failure |
 
-Reject non-PDF and oversized files with stable error codes (e.g. `RESUME_INVALID_TYPE`, `RESUME_TOO_LARGE`).
+Access uses the existing service role key; students never touch Storage directly.
 
-### 3.3 Upload sequence (service)
+### 3.3 Env / config
 
-1. Parse multipart (`multer` memory or temp disk).
-2. Validate type/size.
-3. Generate `resumeId` (UUID) client-side of insert **or** insert then use returned id for storage path — prefer: create UUID, upload with that id in path, then insert row with same id if repository supports it; otherwise upload after insert using returned id.
+Added to `src/config/env.ts` and `.env.example`:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `RESUME_MAX_BYTES` | `5242880` (5 MB) | Multer file size limit |
+| `RESUME_STORAGE_BUCKET` | `resumes` | Supabase Storage bucket name |
+
+### 3.4 Upload validation (multer)
+
+| File | Role |
+| --- | --- |
+| `src/modules/resumes/resumes.upload.middleware.ts` | Multer memory storage, field `file`, PDF MIME + `.pdf` extension filter |
+| `src/modules/resumes/resumes.upload.utils.ts` | Filename sanitization, `%PDF-` magic-byte check, multer error mapping |
+| `src/middleware/resumeUploadRateLimiter.ts` | 10 uploads per 15 minutes per IP |
+
+| Rule | Enforcement |
+| --- | --- |
+| MIME | `application/pdf` only → `RESUME_INVALID_TYPE` |
+| Extension | `.pdf` required → `RESUME_INVALID_TYPE` |
+| Magic bytes | Buffer must start with `%PDF-` → `RESUME_INVALID_TYPE` |
+| Max size | `RESUME_MAX_BYTES` → `RESUME_TOO_LARGE` |
+| Missing file | No multipart file → `VALIDATION_ERROR` |
+| Auth | `authenticate` + `authorize(Role.STUDENT)` on all resume routes |
+| Non-student | **403** `INSUFFICIENT_ROLE` |
+
+### 3.5 Upload sequence (`resumes.service.upload`)
+
+1. Require `req.file`; validate PDF magic bytes.
+2. Generate `resumeId` with `randomUUID()` (same id used for Storage path and DB row).
+3. Sanitize original filename; build object path `{studentId}/{resumeId}/{fileName}`.
 4. Upload bytes to Supabase Storage.
-5. `resumesRepository.create({ studentId, fileUrl, fileName })`.
+5. `resumesRepository.create({ id, studentId, fileUrl, fileName })`.
 6. `resumesRepository.createAnalysis({ resumeId, status: 'pending' })`.
-7. Enqueue job (Milestone 4).
-8. Return **202** with ids + status.
+7. `enqueueResumeAnalysis({ resumeId, analysisId, studentId })` (Milestone 4).
+8. Return **202** `{ resumeId, analysisId, status: 'pending' }`.
 
-On storage failure: do not leave orphan DB rows (compensate: delete row or fail before insert). Prefer **upload then insert**, or transactional cleanup in `catch`.
+**Orphan handling:** upload-first, then insert. If DB insert fails, `deleteObject` runs in the `catch` block so Storage does not retain orphaned files.
 
-### 3.4 Env / config
+### 3.6 Routes wired
 
-| Variable | Purpose |
+File: `src/modules/resumes/resumes.routes.ts`
+
+```text
+POST /   → resumeUploadRateLimiter → multer → resumesController.upload  (202)
+GET /    → list (501 stub until M8)
+GET /:id → getById (501 stub until M8)
+GET /:id/analysis → getAnalysis (501 stub until M8)
+DELETE /:id → remove (501 stub until M8)
+```
+
+### 3.7 Tests
+
+| File | Covers |
 | --- | --- |
-| `RESUME_MAX_BYTES` | Max upload size (default 5242880) |
-| `RESUME_STORAGE_BUCKET` | Default `resumes` |
-| Existing Supabase keys | Service role for storage |
+| `src/__tests__/phase4.upload.test.ts` | No file, non-PDF, valid PDF → 202, storage cleanup on DB failure, company → 403 |
+| `src/__tests__/phase4.scaffold.test.ts` | Updated: POST without file → 400 (not 501) |
 
-### 3.5 Steps
+**Verify:**
 
-1. Create Storage bucket in Supabase (dashboard or SQL/storage API).
-2. Add `multer` (or equivalent) dependency.
-3. Implement `resumes.service.uploadResume`.
-4. Implement `POST /api/v1/resumes` controller.
-5. Add rate limit on upload route (stricter than general API).
-6. Manual smoke: upload PDF as student → row + object exist.
+```bash
+npm run db:migrate
+npm test -- src/__tests__/phase4
+npm run typecheck
+```
+
+Manual smoke (student JWT):
+
+```bash
+curl -i -X POST http://localhost:5000/api/v1/resumes \
+  -H "Authorization: Bearer <student_access_token>" \
+  -F "file=@resume.pdf;type=application/pdf"
+# expect 202 with resumeId, analysisId, status: pending
+```
+
+### 3.8 Files touched
+
+| Action | Path |
+| --- | --- |
+| Create | `supabase/migrations/20260712000000_phase4_resume_storage_bucket.sql` |
+| Create | `src/config/resumeStorage.ts` |
+| Create | `src/middleware/resumeUploadRateLimiter.ts` |
+| Create | `src/modules/resumes/resumes.upload.middleware.ts` |
+| Create | `src/modules/resumes/resumes.upload.utils.ts` |
+| Edit | `src/config/env.ts` |
+| Edit | `src/modules/resumes/resumes.service.ts` |
+| Edit | `src/modules/resumes/resumes.controller.ts` |
+| Edit | `src/modules/resumes/resumes.routes.ts` |
+| Edit | `src/modules/resumes/resumes.types.ts` |
+| Edit | `scripts/apply-migrations.mjs` |
+| Edit | `.env.example` |
+| Create | `src/__tests__/phase4.upload.test.ts` |
+| Edit | `src/__tests__/phase4.scaffold.test.ts` |
+| Edit | `package.json` (`multer`, `@types/multer`) |
+
+### 3.9 Out of scope for Milestone 3
+
+| Concern | Milestone |
+| --- | --- |
+| BullMQ enqueue on upload | 4 |
+| Worker process | 4 |
+| PDF text extraction | 5 |
+| OpenAI scoring | 6 |
+| Set `students.resume_id` | 7 |
+| List / get / delete read APIs | 8 |
 
 ## Milestone 3 exit checklist
 
-| Item | Done when |
+| Item | Status |
 | --- | --- |
-| Bucket exists and is private | Confirmed in Supabase |
-| PDF-only + size limit enforced | Non-PDF / huge file rejected |
-| `resumes` row created with real `file_url` | DB + Storage aligned |
-| Pending `resume_analysis` created | Status `pending` |
-| Non-students blocked | 403 |
-| Orphan handling documented/implemented | Failed upload does not leave junk |
+| Bucket migration + apply script entry | Done |
+| PDF-only + size limit enforced | Done |
+| `resumes` row created with real `file_url` | Done |
+| Pending `resume_analysis` created | Done |
+| Non-students blocked (403) | Done |
+| Orphan Storage cleanup on DB failure | Done |
+| Upload rate limit on POST | Done |
+| `phase4.upload.test.ts` green | Done |
+
+**What comes next:** Milestone 4 — BullMQ worker infrastructure (enqueue `{ resumeId, analysisId, studentId }` on successful upload).
 
 ---
 
 # Milestone 4 — Async Worker Infrastructure
 
+**Status:** Complete  
+**Depends on:** Phase 4 Milestone 3 (upload creates pending analysis rows)  
+**Does not include:** PDF text extraction, OpenAI scoring, persistence of results (Milestones 5–7)
+
 ## What it is
 
-Milestone 4 adds **BullMQ** on Redis so analysis runs outside the HTTP request. A dedicated worker process consumes jobs.
+Milestone 4 adds **BullMQ** on Redis so resume analysis runs outside the HTTP request. A dedicated worker process consumes jobs; the upload service enqueues `{ resumeId, analysisId, studentId }` after a successful upload.
 
 ## Why async
 
 OpenAI + PDF extract can take 5–30+ seconds. HTTP should return immediately. Retries, backoff, and concurrency control belong in a queue, not in Express middleware.
 
-## How it will be completed
+## What was done
 
 ### 4.1 Dependencies & process
 
-- Add `bullmq` (uses Redis; project already has `ioredis` / `REDIS_URL`).
+- Added `bullmq` (uses existing `ioredis` / `REDIS_URL`)
 - Worker entry: `src/workers/resumeAnalysis.worker.ts`
-- npm script: `"worker:resumes": "ts-node-dev --respawn --transpile-only src/workers/resumeAnalysis.worker.ts"`
-- Require `REDIS_URL` for upload enqueue + worker (fail fast if missing in production).
+- npm script: `npm run worker:resumes`
+- Production uploads require `REDIS_URL`; missing Redis → **503** `RESUME_QUEUE_UNAVAILABLE`
+- Development/test without Redis: enqueue is skipped (upload still returns 202)
 
 ### 4.2 Queue design
 
@@ -513,35 +675,119 @@ OpenAI + PDF extract can take 5–30+ seconds. HTTP should return immediately. R
 | Queue name | `resume-analysis` |
 | Job name | `analyze` |
 | Payload | `{ resumeId, analysisId, studentId }` |
-| Attempts | 3 |
-| Backoff | Exponential (e.g. 5s, 15s, 45s) |
-| Concurrency | 2–5 (config) |
-| Idempotency | If analysis already `completed`, no-op success |
+| Job id | `analysisId` (dedupe by analysis row) |
+| Attempts | 3 (`RESUME_ANALYSIS_JOB_ATTEMPTS`) |
+| Backoff | Exponential from 5s (`RESUME_ANALYSIS_BACKOFF_MS`) |
+| Concurrency | 3 default (`RESUME_ANALYSIS_QUEUE_CONCURRENCY`) |
+| Idempotency | If analysis already `completed`, processor no-ops |
 
-### 4.3 Worker responsibilities (orchestration only)
+### 4.3 Module layout
+
+| File | Role |
+| --- | --- |
+| `src/config/redis.ts` | Shared ioredis connection factory (`maxRetriesPerRequest: null` for BullMQ) |
+| `src/queues/resumeAnalysis.constants.ts` | Queue + job names |
+| `src/queues/resumeAnalysis.types.ts` | `ResumeAnalysisJobPayload` |
+| `src/queues/resumeAnalysis.queue.ts` | `enqueueResumeAnalysis()`, lazy Queue singleton |
+| `src/modules/resumes/resumeAnalysis.processor.ts` | Testable job orchestration (claim + validate) |
+| `src/workers/resumeAnalysis.worker.ts` | Worker process, failed-job handler, SIGTERM shutdown |
+
+### 4.4 Processor behavior (M4 stub)
 
 1. Load analysis + resume via repositories.
-2. Set status `processing` + `started_at`.
-3. Call extract (M5) → OpenAI (M6) → persist (M7).
-4. On final failure: `failAnalysis` with message; do not leave `processing` forever.
+2. If `completed` → return (idempotent).
+3. Validate resume belongs to `studentId`.
+4. If `pending` → `updateAnalysisStatus(..., 'processing')`.
+5. **M5–M7 deferred:** extract text, OpenAI, persist result, set active resume.
 
-### 4.4 Steps
+On final job failure (after all retries), worker calls `failAnalysis(analysisId, error.message)`.
 
-1. Add BullMQ dependency and shared Redis connection helper (reuse URL from env).
-2. Implement `enqueueResumeAnalysis(payload)` used by upload service.
-3. Implement worker processor stub (log job; complete no-op until M5–M7).
-4. Document runbooks: API process + worker process both required in deploy.
-5. Add graceful shutdown (close queue/worker on SIGTERM).
+Non-retryable errors (missing analysis/resume, student mismatch) throw BullMQ `UnrecoverableError`.
+
+### 4.5 Upload integration
+
+`resumes.service.upload` calls `enqueueResumeAnalysis` after creating the pending analysis row. Upload response unchanged (**202**).
+
+### 4.6 Env / config
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `REDIS_URL` | optional | Required in production for enqueue + worker |
+| `RESUME_ANALYSIS_QUEUE_CONCURRENCY` | `3` | Worker parallelism |
+| `RESUME_ANALYSIS_JOB_ATTEMPTS` | `3` | Max retries per job |
+| `RESUME_ANALYSIS_BACKOFF_MS` | `5000` | Exponential backoff base delay |
+
+### 4.7 Deploy runbook
+
+Run **two processes** in environments that perform analysis:
+
+```bash
+# Terminal 1 — API
+npm run dev
+
+# Terminal 2 — worker (requires REDIS_URL)
+npm run worker:resumes
+```
+
+Local Redis example: `REDIS_URL=redis://localhost:6379`
+
+### 4.8 Tests
+
+| File | Covers |
+| --- | --- |
+| `src/__tests__/phase4.queue.test.ts` | Production without Redis → 503; enqueue payload + jobId |
+| `src/__tests__/phase4.worker.test.ts` | Idempotent completed, pending→processing, UnrecoverableError paths |
+| `src/__tests__/phase4.upload.test.ts` | Upload calls `enqueueResumeAnalysis` |
+
+**Verify:**
+
+```bash
+npm test -- src/__tests__/phase4
+npm run typecheck
+```
+
+### 4.9 Files touched
+
+| Action | Path |
+| --- | --- |
+| Create | `src/config/redis.ts` |
+| Create | `src/queues/resumeAnalysis.constants.ts` |
+| Create | `src/queues/resumeAnalysis.types.ts` |
+| Create | `src/queues/resumeAnalysis.queue.ts` |
+| Create | `src/modules/resumes/resumeAnalysis.processor.ts` |
+| Create | `src/workers/resumeAnalysis.worker.ts` |
+| Edit | `src/modules/resumes/resumes.service.ts` |
+| Edit | `src/modules/resumes/resumes.constants.ts` |
+| Edit | `src/config/env.ts` |
+| Edit | `.env.example` |
+| Edit | `package.json` (`bullmq`, `worker:resumes` script) |
+| Create | `src/__tests__/phase4.queue.test.ts` |
+| Create | `src/__tests__/phase4.worker.test.ts` |
+| Edit | `src/__tests__/phase4.upload.test.ts` |
+
+### 4.10 Out of scope for Milestone 4
+
+| Concern | Milestone |
+| --- | --- |
+| PDF text extraction | 5 |
+| OpenAI scoring | 6 |
+| Persist scores + set `students.resume_id` | 7 |
+| Read/poll APIs | 8 |
 
 ## Milestone 4 exit checklist
 
-| Item | Done when |
+| Item | Status |
 | --- | --- |
-| Job enqueued on successful upload | Visible in Redis/BullMQ |
-| Worker process starts and consumes | Logs show job received |
-| Retries configured | Transient failures re-attempt |
-| Missing Redis fails clearly | Error message / health note |
-| Idempotent completed jobs | Re-delivery safe |
+| Job enqueued on successful upload | Done |
+| Worker process starts and consumes jobs | Done |
+| Retries + exponential backoff configured | Done |
+| Missing Redis fails clearly in production (503) | Done |
+| Idempotent completed jobs (no-op) | Done |
+| Final failure marks analysis `failed` | Done |
+| Graceful shutdown on SIGTERM/SIGINT | Done |
+| `phase4.queue.test.ts` + `phase4.worker.test.ts` green | Done |
+
+**What comes next:** Milestone 5 — PDF text extraction from stored resume files.
 
 ---
 
@@ -830,7 +1076,7 @@ Script: `npm run test:phase4`.
 
 ### Phase 4 verdict
 
-**Not started.** Implementation may begin only after this specification is accepted. Phase 3 exit checklist remains the hard dependency gate (already complete).
+**In progress.** Milestones 1–4 are complete (contracts, schema/repository, upload pipeline, BullMQ worker). Milestones 5–9 (extraction, OpenAI, persistence, read APIs, test matrix) remain.
 
 ---
 
@@ -845,20 +1091,28 @@ Script: `npm run test:phase4`.
 | `src/modules/auth/` | Pattern for feature modules |
 | `documentation/INTEGRATION.md` | analytiCV analyzer response shape reference |
 
-# Appendix B — Proposed new files
+# Appendix B — New / planned files
 
-| Path | Role |
-| --- | --- |
-| `supabase/migrations/20260711000000_phase4_resume_analysis.sql` | Status + payload columns |
-| `src/modules/resumes/*` | Feature module |
-| `src/workers/resumeAnalysis.worker.ts` | BullMQ worker |
-| `src/__tests__/phase4.*.test.ts` | Phase 4 tests |
+| Path | Role | Status |
+| --- | --- | --- |
+| `supabase/migrations/20260711000000_phase4_resume_analysis.sql` | Status + payload columns | Done (M2) |
+| `supabase/migrations/20260712000000_phase4_resume_storage_bucket.sql` | Private `resumes` bucket | Done (M3) |
+| `src/config/resumeStorage.ts` | Storage upload/delete helpers | Done (M3) |
+| `src/modules/resumes/*` | Feature module | Done (M1–M3) |
+| `src/middleware/resumeUploadRateLimiter.ts` | Upload rate limit | Done (M3) |
+| `src/config/redis.ts` | Shared Redis connection for BullMQ | Done (M4) |
+| `src/queues/resumeAnalysis.queue.ts` | Enqueue analysis jobs | Done (M4) |
+| `src/workers/resumeAnalysis.worker.ts` | BullMQ worker | Done (M4) |
+| `src/__tests__/phase4.*.test.ts` | Phase 4 tests | Partial (M1–M4) |
 
 # Appendix C — Environment variables (Phase 4)
 
 | Variable | Required for | Notes |
 | --- | --- | --- |
-| `REDIS_URL` | Upload enqueue + worker | Required in environments running analysis |
+| `REDIS_URL` | Upload enqueue + worker | Required in production |
+| `RESUME_ANALYSIS_QUEUE_CONCURRENCY` | Worker | Default `3` |
+| `RESUME_ANALYSIS_JOB_ATTEMPTS` | Queue retries | Default `3` |
+| `RESUME_ANALYSIS_BACKOFF_MS` | Queue backoff | Default `5000` |
 | `OPENAI_API_KEY` | Worker | Never commit |
 | `OPENAI_MODEL` | Worker | Default e.g. `gpt-4o-mini` |
 | `OPENAI_TIMEOUT_MS` | Worker | Optional |

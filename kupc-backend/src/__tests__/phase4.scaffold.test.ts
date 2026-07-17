@@ -16,7 +16,9 @@ jest.mock('../config/env', () => {
       OTP_MAX_ATTEMPTS: 5,
       KU_EMAIL_DOMAIN: 'ku.edu.np',
       AUTH_USER_CACHE_TTL_SECONDS: 30,
-      ADMIN_PASSWORD_LOGIN_ENABLED: true
+      ADMIN_PASSWORD_LOGIN_ENABLED: true,
+      RESUME_MAX_BYTES: 5_242_880,
+      RESUME_STORAGE_BUCKET: 'resumes'
     }
   };
 });
@@ -62,10 +64,10 @@ describe('Phase 4 Milestone 1 - resumes module scaffold', () => {
     expect(res.body?.error?.code).toBe(AUTH_ERROR_CODES.INSUFFICIENT_ROLE);
   });
 
-  it('POST /api/v1/resumes as STUDENT -> 501 stub (auth passed)', async () => {
+  it('POST /api/v1/resumes as STUDENT without file -> 400 VALIDATION_ERROR', async () => {
     const res = await request(app).post('/api/v1/resumes').set('x-test-role', Role.STUDENT);
-    expect(res.status).toBe(501);
-    expect(res.body?.error?.code).toBe('NOT_IMPLEMENTED');
+    expect(res.status).toBe(400);
+    expect(res.body?.error?.code).toBe('VALIDATION_ERROR');
   });
 
   it('GET /api/v1/resumes as STUDENT -> 501 stub (auth passed)', async () => {

@@ -5,7 +5,7 @@ import { resumesService } from './resumes.service';
 export const resumesController = {
   upload: (async (req, res, next) => {
     try {
-      const data = await resumesService.upload(req.user!.id);
+      const data = await resumesService.upload(req.user!.id, req.file);
       res.status(202).json(successResponse(data, 'Resume upload accepted'));
     } catch (error) {
       next(error);

@@ -20,7 +20,8 @@ const migrations = [
   '20260710000001_phase3_indexes.sql',
   '20260710000002_phase3_rls_policies.sql',
   '20260711000000_phase4_resume_analysis.sql',
-  '20260711000001_phase4_fix_issues_identified.sql'
+  '20260711000001_phase4_fix_issues_identified.sql',
+  '20260712000000_phase4_resume_storage_bucket.sql'
 ];
 
 async function main() {

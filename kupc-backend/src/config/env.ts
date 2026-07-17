@@ -26,7 +26,12 @@ const envSchema = z.object({
   SMTP_PASS: z.string().optional(),
   SMTP_FROM: z.string().email().optional(),
   ADMIN_PASSWORD_LOGIN_ENABLED: z.coerce.boolean().default(false),
-  ADMIN_TOTP_SECRET: z.string().min(16).optional()
+  ADMIN_TOTP_SECRET: z.string().min(16).optional(),
+  RESUME_MAX_BYTES: z.coerce.number().int().positive().default(5_242_880),
+  RESUME_STORAGE_BUCKET: z.string().min(1).default('resumes'),
+  RESUME_ANALYSIS_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(3),
+  RESUME_ANALYSIS_JOB_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  RESUME_ANALYSIS_BACKOFF_MS: z.coerce.number().int().positive().default(5_000)
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
