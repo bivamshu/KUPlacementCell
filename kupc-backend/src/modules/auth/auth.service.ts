@@ -126,18 +126,47 @@ function mapRegistrationError(error: unknown): AppError {
   return new AppError(message, 500);
 }
 
+function isAuthEmailNotConfirmed(error: { message?: string; code?: string } | null): boolean {
+  if (!error) return false;
+  const message = (error.message ?? '').toLowerCase();
+  return error.code === 'email_not_confirmed' || message.includes('email not confirmed');
+}
+
 async function loginWithPassword(
   input: LoginInput,
   context: RequestContext,
   allowedRoles: Role[]
 ): Promise<Awaited<ReturnType<typeof issueTokenPair>>> {
   const email = normalizeEmail(input.email);
-  const { data: authData, error } = await supabaseAnon.auth.signInWithPassword({
+  let { data: authData, error } = await supabaseAnon.auth.signInWithPassword({
     email,
     password: input.password
   });
 
-  if (error) {
+  // Self-heal accounts verified in our DB (or companies) but still unconfirmed in Supabase Auth.
+  // OTP / company signup used to skip Auth email_confirm, so signInWithPassword looked like a bad password.
+  if (error && isAuthEmailNotConfirmed(error)) {
+    const existing = await usersRepository.findByEmail(email);
+
+    if (existing?.role === Role.STUDENT && !existing.email_verified) {
+      throw new AppError('Account is not verified', 403, AUTH_ERROR_CODES.ACCOUNT_NOT_VERIFIED);
+    }
+
+    if (existing && (existing.email_verified || existing.role === Role.COMPANY || existing.role === Role.ADMIN)) {
+      const { error: confirmError } = await supabaseAdmin.auth.admin.updateUserById(existing.id, {
+        email_confirm: true
+      });
+
+      if (!confirmError) {
+        ({ data: authData, error } = await supabaseAnon.auth.signInWithPassword({
+          email,
+          password: input.password
+        }));
+      }
+    }
+  }
+
+  if (error || !authData.user) {
     throw new AppError('Invalid credentials', 401, AUTH_ERROR_CODES.INVALID_CREDENTIALS);
   }
 
@@ -287,6 +316,15 @@ export const authService = {
       throw new AppError('Invalid OTP', 400, AUTH_ERROR_CODES.INVALID_OTP);
     }
 
+    // Confirm in Supabase Auth so later signInWithPassword works (OTP only marked public.users before).
+    const { error: confirmError } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
+      email_confirm: true
+    });
+
+    if (confirmError) {
+      throw new AppError('Failed to confirm account', 500);
+    }
+
     const verifiedUser = await usersRepository.markEmailVerified(user.id);
     await studentOtpsRepository.consume(otpRecord.id);
 
@@ -301,14 +339,15 @@ export const authService = {
       throw new AppError('Email is already registered', 409, AUTH_ERROR_CODES.EMAIL_ALREADY_REGISTERED);
     }
 
-    const { data: authData, error: authError } = await supabaseAnon.auth.signUp({
+    // Confirm email in Auth immediately — company approval is separate (verification_status).
+    // Public signUp left accounts unconfirmed when Supabase "Confirm email" is enabled.
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password: input.password,
-      options: {
-        data: {
-          company_name: input.company_name,
-          role: Role.COMPANY
-        }
+      email_confirm: true,
+      user_metadata: {
+        company_name: input.company_name,
+        role: Role.COMPANY
       }
     });
 
@@ -322,7 +361,7 @@ export const authService = {
         email,
         companyName: input.company_name,
         website: input.website,
-        emailVerified: Boolean(authData.user.email_confirmed_at)
+        emailVerified: true
       });
 
       const company = await companiesRepository.findByUserId(authData.user.id);

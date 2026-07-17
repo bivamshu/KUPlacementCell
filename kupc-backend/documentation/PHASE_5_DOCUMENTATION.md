@@ -1,10 +1,10 @@
 # KUPC Phase 5 — Student & Company Profiles + Frontend Integration Foundation
 
-**Status:** Backend complete (Milestones B1–B5); frontend milestones F1–F8 pending  
+**Status:** Phase 5 complete (Backend B1–B5 + Frontend F1–F8)  
 **Date:** 2026-07-17  
 **Depends on:** Phase 2 (Auth), Phase 3B (DB/repos), Phase 4 (Resumes)  
-**References:** `KUPC_Phase5_Specification.pdf`, `KUPC_Progress_Report.pdf`, `PHASE_4_DOCUMENTATION.md`  
-**Feeds into:** Phase 6 — Job Posting & Discovery; frontend profile + resume wiring (F5–F7)
+**References:** `KUPC_Phase5_Specification.pdf`, `frontend/documentation/PHASE_A_DOCUMENTATION.md`, `frontend/documentation/PHASE_B_E_DOCUMENTATION.md`, `frontend/INTEGRATION.md`  
+**Feeds into:** Phase 6 — Job Posting & Discovery
 
 | Milestone | Side | Topic | Status |
 | --- | --- | --- | --- |
@@ -13,7 +13,14 @@
 | B3 | Backend | Avatar & logo storage | **Complete** |
 | B4 | Backend | Swagger, errors, hardening | **Complete** |
 | B5 | Backend | Phase 5 test matrix | **Complete** |
-| F1–F8 | Frontend | API client, auth, profiles, resumes | Pending |
+| F1 | Frontend | API client & environment | **Complete** |
+| F2 | Frontend | Token storage & AuthContext | **Complete** |
+| F3 | Frontend | Auth screens | **Complete** |
+| F4 | Frontend | Guards & role routing | **Complete** |
+| F5 | Frontend | Student profile wiring | **Complete** |
+| F6 | Frontend | Company profile editor | **Complete** |
+| F7 | Frontend | Resume analyzer wiring | **Complete** |
+| F8 | Frontend | UX polish & INTEGRATION.md | **Complete** |
 
 ---
 
@@ -641,15 +648,15 @@ All endpoints are documented in Swagger UI at `/api/docs` and covered by the `te
 
 **Deployment note:** run `npm run db:migrate` (or apply `20260717000000_phase5_profile_image_buckets.sql` manually) so the `avatars` and `company-logos` buckets exist before using the upload endpoints.
 
-# Remaining Phase 5 Milestones (summary)
+# Remaining work after Phase 5
 
-The frontend milestones from `KUPC_Phase5_Specification.pdf` are not yet implemented:
+Frontend F1–F8 and backend B1–B5 are complete. See:
 
-| ID | Goal (short) |
-| --- | --- |
-| **F1–F8** | Frontend API client, auth screens, profile wiring, resume analysis UI |
+- `frontend/INTEGRATION.md`
+- `frontend/documentation/PHASE_A_DOCUMENTATION.md`
+- `frontend/documentation/PHASE_B_E_DOCUMENTATION.md`
 
-After F1–F8, Phase 6 (Job Posting & Discovery per Backend Specification v2.0) can start — it now has company identity, verification context, and profile metadata to build on.
+**Next product phase:** Backend Specification v2.0 Job Posting & Discovery (Phase 6), then replace remaining frontend mocks (discover, matches, chat, kanban).
 
 ---
 
