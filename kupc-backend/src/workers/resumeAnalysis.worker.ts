@@ -17,7 +17,7 @@ function log(message: string, extra?: Record<string, unknown>): void {
 async function handleJob(job: Job<ResumeAnalysisJobPayload>): Promise<void> {
   log('Job received', { jobId: job.id, ...job.data });
   await processResumeAnalysisJob(job.data);
-  log('Job orchestration complete (M5–M7 pipeline pending)', { jobId: job.id });
+  log('Job orchestration complete', { jobId: job.id, analysisId: job.data.analysisId });
 }
 
 async function markAnalysisFailed(analysisId: string, message: string): Promise<void> {

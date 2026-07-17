@@ -21,7 +21,7 @@ const REQUIRED_REPOSITORIES = [
 ];
 
 const REQUIRED_EXPORTS: Record<string, string[]> = {
-  'students.repository.ts': ['studentsRepository', 'findById', 'updateProfile', 'listByDepartment'],
+  'students.repository.ts': ['studentsRepository', 'findById', 'updateProfile', 'listByDepartment', 'setActiveResume'],
   'companies.repository.ts': ['companiesRepository', 'findByUserId', 'listPending', 'updateProfile'],
   'jobs.repository.ts': ['jobsRepository', 'create', 'listOpenForFeed', 'listByCompany', 'findById'],
   'resumes.repository.ts': ['resumesRepository', 'create', 'listByStudent', 'createAnalysis'],

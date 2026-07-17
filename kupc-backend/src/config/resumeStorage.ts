@@ -31,5 +31,16 @@ export const resumeStorage = {
     if (error) {
       throw error;
     }
+  },
+
+  async downloadPdf(objectPath: string): Promise<Buffer> {
+    const { data, error } = await supabaseAdmin.storage.from(getResumeStorageBucket()).download(objectPath);
+
+    if (error) {
+      throw error;
+    }
+
+    const arrayBuffer = await data.arrayBuffer();
+    return Buffer.from(arrayBuffer);
   }
 };

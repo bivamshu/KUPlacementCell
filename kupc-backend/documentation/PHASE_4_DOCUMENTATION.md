@@ -1,6 +1,6 @@
 # KUPC Phase 4 — Resume Upload & AI Analysis
 
-**Status:** In progress (Milestones 1–4 complete)  
+**Status:** In progress (Milestones 1–7 complete)  
 **Date:** 2026-07-11  
 **Depends on:** Phase 3 (3A design + 3B implementation) — complete  
 **References:** `PHASE_3A_DOCUMENTATION.md`, `PHASE_3B_DOCUMENTATION.md`, `INTEGRATION.md` (response shape only)  
@@ -12,9 +12,9 @@
 | 2 | Schema & repository extensions | Complete |
 | 3 | Supabase Storage & upload pipeline | Complete |
 | 4 | Async worker infrastructure | Complete |
-| 5 | PDF text extraction | Planned |
-| 6 | OpenAI scoring service | Planned |
-| 7 | Persistence & active-resume linkage | Planned |
+| 5 | PDF text extraction | Complete |
+| 6 | OpenAI scoring service | Complete |
+| 7 | Persistence & active-resume linkage | Complete |
 | 8 | Read APIs, polling & Swagger | Planned |
 | 9 | Testing matrix & hardening | Planned |
 
@@ -698,7 +698,7 @@ OpenAI + PDF extract can take 5–30+ seconds. HTTP should return immediately. R
 2. If `completed` → return (idempotent).
 3. Validate resume belongs to `studentId`.
 4. If `pending` → `updateAnalysisStatus(..., 'processing')`.
-5. **M5–M7 deferred:** extract text, OpenAI, persist result, set active resume.
+5. **M5–M7:** download PDF → extract → OpenAI → `completeAnalysis` → `setActiveResume`.
 
 On final job failure (after all retries), worker calls `failAnalysis(analysisId, error.message)`.
 
@@ -769,8 +769,8 @@ npm run typecheck
 
 | Concern | Milestone |
 | --- | --- |
-| PDF text extraction | 5 |
-| OpenAI scoring | 6 |
+| PDF text extraction | 5 (done) |
+| OpenAI scoring | 6 (done) |
 | Persist scores + set `students.resume_id` | 7 |
 | Read/poll APIs | 8 |
 
@@ -793,167 +793,297 @@ npm run typecheck
 
 # Milestone 5 — PDF Text Extraction
 
+**Status:** Complete  
+**Depends on:** Milestone 4 (worker consumes jobs)  
+**Does not include:** OpenAI scoring (Milestone 6), `students.resume_id` (Milestone 7)
+
 ## What it is
 
-Milestone 5 converts the stored PDF into **plain text** suitable for an OpenAI prompt.
+Milestone 5 converts the stored PDF into **plain text** suitable for an OpenAI prompt. The worker downloads the file from Supabase Storage and extracts text before any AI call.
 
 ## Why it is a separate milestone
 
-Extraction failures (scanned image-only PDFs, corrupt files, empty text) should be classified **before** spending OpenAI tokens. Keeping extract as its own service also allows swapping libraries later.
+Extraction failures (scanned image-only PDFs, corrupt files, empty text) should be classified **before** spending OpenAI tokens. Keeping extract as its own module allows swapping libraries later.
 
-## How it will be completed
+## What was done
 
-### 5.1 Library choice
+### 5.1 Library
 
-Default: `pdf-parse` (Node) for text-layer PDFs. Document limitation: image-only scans may yield empty text → mark analysis `failed` with `RESUME_EMPTY_TEXT` (OCR is out of scope for Phase 4).
+- **`pdf-parse` v2** (`PDFParse` class) for text-layer PDFs
+- **OCR is out of scope** — image-only scans may yield empty text → `RESUME_EMPTY_TEXT`
 
-### 5.2 Service
+### 5.2 Storage download
 
-```text
-src/modules/resumes/resumes.extract.ts
-  extractTextFromPdf(buffer: Buffer): Promise<string>
+Extended `src/config/resumeStorage.ts`:
+
+| Method | Purpose |
+| --- | --- |
+| `downloadPdf(objectPath)` | Download bytes from private `resumes` bucket |
+
+### 5.3 Extract service
+
+File: `src/modules/resumes/resumes.extract.ts`
+
+```typescript
+extractTextFromPdf(buffer: Buffer): Promise<string>
 ```
 
-Worker flow:
+| Rule | Behavior |
+| --- | --- |
+| Parse failure | `ResumeEmptyTextError` |
+| Text length &lt; `RESUME_MIN_EXTRACT_CHARS` (default 100) | `RESUME_EMPTY_TEXT` |
+| Whitespace | Collapsed and trimmed |
 
-1. Download object from Storage using `file_url` / storage path.
-2. Extract text.
-3. Trim; if length below threshold (e.g. &lt; 100 chars), fail analysis.
-4. Optional light heuristic: require resume-like keywords (experience, education, skills) — soft check; log warning or fail if clearly not a resume.
+Errors live in `src/modules/resumes/resumes.errors.ts` (`ResumeEmptyTextError`).
 
-### 5.3 Steps
+### 5.4 Worker integration
 
-1. Add PDF dependency.
-2. Implement extract helper with unit tests on fixture PDFs.
-3. Integrate into worker before OpenAI call.
-4. Map empty/corrupt PDF to non-retryable failure where appropriate.
+`resumeAnalysis.processor.ts` flow after claim:
+
+1. `resumeStorage.downloadPdf(resume.file_url)`
+2. `extractTextFromPdf(buffer)`
+3. Pass text to OpenAI (M6)
+
+Empty/corrupt PDF → `UnrecoverableError` with `RESUME_EMPTY_TEXT` (no BullMQ retries).
+
+### 5.5 Env
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `RESUME_MIN_EXTRACT_CHARS` | `100` | Minimum extracted text length |
+
+### 5.6 Tests
+
+| File | Covers |
+| --- | --- |
+| `src/__tests__/phase4.extract.test.ts` | Valid text, too-short text, parse failure |
+| `src/__tests__/phase4.worker.test.ts` | Empty text → non-retryable error |
+
+**Verify:**
+
+```bash
+npm test -- src/__tests__/phase4.extract.test.ts
+npm test -- src/__tests__/phase4.worker.test.ts
+```
+
+### 5.7 Files touched
+
+| Action | Path |
+| --- | --- |
+| Create | `src/modules/resumes/resumes.extract.ts` |
+| Create | `src/modules/resumes/resumes.errors.ts` |
+| Edit | `src/config/resumeStorage.ts` |
+| Edit | `src/modules/resumes/resumeAnalysis.processor.ts` |
+| Edit | `src/config/env.ts` |
+| Edit | `.env.example` |
+| Create | `src/__tests__/phase4.extract.test.ts` |
+| Edit | `package.json` (`pdf-parse`) |
 
 ## Milestone 5 exit checklist
 
-| Item | Done when |
+| Item | Status |
 | --- | --- |
-| Text extracted from normal PDF | Fixture test passes |
-| Empty/corrupt handled | Analysis `failed` with clear code |
-| Worker downloads from Storage | Integration path works |
-| OCR explicitly out of scope | Documented |
+| Text extracted from normal PDF (mocked unit test) | Done |
+| Empty/corrupt mapped to `RESUME_EMPTY_TEXT` | Done |
+| Worker downloads from Storage before extract | Done |
+| OCR explicitly out of scope | Done |
+
+**What comes next:** Milestone 6 — OpenAI structured scoring on extracted text.
 
 ---
 
 # Milestone 6 — OpenAI Scoring Service
 
+**Status:** Complete  
+**Depends on:** Milestone 5 (extracted resume text)  
+**Does not include:** `students.resume_id` linkage (Milestone 7)
+
 ## What it is
 
-Milestone 6 calls OpenAI with the extracted resume text and returns **structured** ATS-style scoring and feedback.
+Milestone 6 calls OpenAI with extracted resume text and returns **structured** ATS-style scoring and feedback. Results are validated with Zod and persisted via `completeAnalysis`.
 
 ## Why OpenAI here
 
-Phase 4 requires AI scoring. Structured outputs keep persistence deterministic (numeric `ats_score`, typed JSON for skills/suggestions) instead of free-form prose that is hard to store and query.
+Phase 4 requires AI scoring. Structured JSON keeps persistence deterministic (numeric `ats_score`, typed skills/suggestions) instead of free-form prose.
 
-## How it will be completed
+## What was done
 
 ### 6.1 Config
 
-| Variable | Purpose |
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `OPENAI_API_KEY` | optional in API; required for worker | Never commit |
+| `OPENAI_MODEL` | `gpt-4o-mini` | Chat model |
+| `OPENAI_TIMEOUT_MS` | `60000` | Request timeout |
+
+Validated in `src/config/env.ts`; documented in `.env.example`.
+
+### 6.2 Services
+
+| File | Role |
 | --- | --- |
-| `OPENAI_API_KEY` | Required for worker |
-| `OPENAI_MODEL` | Default documented model (e.g. `gpt-4o-mini`) |
-| `OPENAI_TIMEOUT_MS` | Request timeout |
+| `src/modules/resumes/resumes.openai.schema.ts` | Zod schema matching `AnalysisResultDto` (§1.2) |
+| `src/modules/resumes/resumes.openai.ts` | `analyzeResumeText(text, { client? })` |
+| `src/modules/resumes/resumes.errors.ts` | `OpenAiAnalysisError` with `retryable` flag |
 
-Never commit keys. Validate in `env.ts`.
+OpenAI call uses `response_format: { type: 'json_object' }`, temperature `0.2`, and server-side grade fallback (A ≥ 85, B ≥ 70, C ≥ 55, else D).
 
-### 6.2 Service
-
-```text
-src/modules/resumes/resumes.openai.ts
-  analyzeResumeText(text: string): Promise<ResumeAnalysisResult>
-```
-
-- Use OpenAI SDK with **JSON schema / response_format** matching Milestone 1.2.
-- System prompt: score ATS readiness (contact, skills, experience, education, formatting); return strengths, suggestions, issues; extract skills into taxonomy categories.
-- Temperature low (e.g. 0–0.3) for stability.
-- Store `model` used on the analysis row.
-
-### 6.3 Scoring guidance (prompt contract)
-
-Ask the model for `total_score` 0–100 and category breakdowns similar to analytiCV weights (contact / skills / experience / education / formatting) so UI can show a familiar breakdown. Grades: A ≥ 85, B ≥ 70, C ≥ 55, else D (compute server-side from total if model omits grade).
-
-### 6.4 Error handling
+### 6.3 Error classification
 
 | Error | Behavior |
 | --- | --- |
-| Rate limit / 5xx | Retry via BullMQ |
-| Invalid JSON / schema mismatch | Retry once; then fail |
-| Auth / bad API key | Fail fast; alert ops (non-retryable) |
+| Rate limit / 5xx | `OpenAiAnalysisError(retryable: true)` → BullMQ retry |
+| Invalid JSON / Zod mismatch | Retryable |
+| Auth / bad API key | Non-retryable → `UnrecoverableError` |
+| Missing `OPENAI_API_KEY` | Non-retryable |
 
-### 6.5 Steps
+### 6.4 Processor persistence
 
-1. Add `openai` package.
-2. Implement schema-validated analyze function.
-3. Unit-test with mocked OpenAI client.
-4. Wire into worker after extraction.
-5. Log token usage optionally via `analytics_events` (optional stretch).
+After successful OpenAI response, processor calls `resumesRepository.completeAnalysis` with:
+
+- `ats_score`, `grade`, `score_breakdown`, `extracted_skills`, `summary`
+- `strengths`, `suggestions`, `issues_identified`
+- `model`, `raw_response`
+
+Analysis status becomes `completed`. Active resume linkage is handled in Milestone 7.
+
+### 6.5 Tests
+
+| File | Covers |
+| --- | --- |
+| `src/__tests__/phase4.openai.test.ts` | Schema parse, grade fallback, auth fail, schema mismatch |
+| `src/__tests__/phase4.worker.test.ts` | Full pipeline through `completeAnalysis` |
+
+**Verify:**
+
+```bash
+npm test -- src/__tests__/phase4
+npm run typecheck
+```
+
+Worker smoke (requires `REDIS_URL`, `OPENAI_API_KEY`, Supabase):
+
+```bash
+npm run worker:resumes
+```
+
+### 6.6 Files touched
+
+| Action | Path |
+| --- | --- |
+| Create | `src/modules/resumes/resumes.openai.ts` |
+| Create | `src/modules/resumes/resumes.openai.schema.ts` |
+| Edit | `src/modules/resumes/resumeAnalysis.processor.ts` |
+| Edit | `src/config/env.ts` |
+| Edit | `.env.example` |
+| Create | `src/__tests__/phase4.openai.test.ts` |
+| Edit | `src/__tests__/phase4.worker.test.ts` |
+| Edit | `package.json` (`openai`) |
+
+### 6.7 Out of scope for Milestone 6
+
+| Concern | Milestone |
+| --- | --- |
+| Set `students.resume_id` on success | 7 (done) |
+| Read/poll APIs for clients | 8 |
 
 ## Milestone 6 exit checklist
 
-| Item | Done when |
+| Item | Status |
 | --- | --- |
-| Structured result matches contract | Zod/parse validates |
-| Env vars documented | `.env.example` updated |
-| Mocked unit tests pass | No live key required in CI |
-| Retries vs fail-fast classified | Documented in code comments + this doc |
-| Model id persisted | `resume_analysis.model` set |
+| Structured result matches contract (Zod) | Done |
+| Env vars documented | Done |
+| Mocked unit tests pass (no live key in CI) | Done |
+| Retry vs fail-fast classified | Done |
+| `resume_analysis.model` set on complete | Done |
+
+**What comes next:** Milestone 7 — set `students.resume_id` to the newly analyzed resume on success.
 
 ---
 
 # Milestone 7 — Persistence & Active-Resume Linkage
 
+**Status:** Complete  
+**Depends on:** Milestone 6 (`completeAnalysis` persists OpenAI output)  
+**Does not include:** `student_skills` sync (optional stretch), read APIs (Milestone 8)
+
 ## What it is
 
-Milestone 7 writes the OpenAI result into `resume_analysis` and updates `students.resume_id` to the newly uploaded resume.
+Milestone 7 promotes a successfully analyzed resume to the student's **active resume** by updating `students.resume_id`. This completes the Phase 3A product rule: profiles and later phases read the active resume via that pointer.
 
 ## Why
 
-Phase 3A defined the product rule:
+Without updating `students.resume_id`, upload + analysis completes in isolation — the student profile still points at an old resume (or null). Only **completed** analyses promote the pointer; failed jobs leave the previous active resume unchanged.
 
+## What was done
+
+### 7.1 Repository method
+
+File: `src/database/students.repository.ts`
+
+```typescript
+setActiveResume(studentId: string, resumeId: string | null): Promise<StudentRecord>
 ```
-Upload → INSERT resumes
-  → Analysis job → INSERT/UPDATE resume_analysis
-  → UPDATE students.resume_id
-Old resumes + analyses remain as history.
+
+Delegates to `updateProfile(id, { resumeId })`. Already existed from Phase 3B; wired into the worker in M7.
+
+### 7.2 Processor ordering
+
+File: `src/modules/resumes/resumeAnalysis.processor.ts`
+
+On success:
+
+1. `completeAnalysis(...)` — status `completed`, scores persisted
+2. `setActiveResume(studentId, resumeId)` — promote active pointer
+
+On failure (extract/OpenAI/DB): **no** `setActiveResume` call — previous active resume preserved.
+
+### 7.3 Idempotent completed jobs
+
+If analysis is already `completed` (e.g. BullMQ redelivery after `completeAnalysis` succeeded but `setActiveResume` failed), the processor skips re-analysis but still calls `setActiveResume` to heal the pointer.
+
+### 7.4 Out of scope (documented)
+
+| Concern | Status |
+| --- | --- |
+| `student_skills` upsert from `extracted_skills` | Not implemented — optional best-effort stretch |
+| Latest upload promoted when analysis **failed** | Explicitly **not** the default |
+
+### 7.5 Tests
+
+| File | Covers |
+| --- | --- |
+| `src/__tests__/phase4.worker.test.ts` | `setActiveResume` after success; not called on empty PDF; idempotent completed path |
+| `src/__tests__/phase3.repositories.test.ts` | Exports `setActiveResume` |
+| `src/__tests__/phase3.matrix.test.ts` | CASCADE/SET NULL on delete (unchanged, still green) |
+
+**Verify:**
+
+```bash
+npm test -- src/__tests__/phase4.worker.test.ts
+npm test -- src/__tests__/phase3.repositories.test.ts
+npm run typecheck
 ```
 
-Profiles and later phases read the **active** resume via `students.resume_id`.
+### 7.6 Files touched
 
-## How it will be completed
-
-### 7.1 On success
-
-1. `completeAnalysis` with scores, skills, summary, strengths, suggestions, issues, breakdown, `status=completed`, `completed_at=now()`.
-2. `studentsRepository` method to `setActiveResume(studentId, resumeId)`.
-3. Optionally upsert `student_skills` from `extracted_skills` flattened names (match/create rows in `skills`). Treat as best-effort; do not fail analysis if skill sync fails — log and continue.
-
-### 7.2 On failure
-
-1. `failAnalysis(analysisId, errorMessage)`.
-2. Do **not** change `students.resume_id` if this upload never completed successfully (keep previous active resume).
-3. If product wants “latest upload even if failed” as active file pointer, document that explicitly — **default: only promote on completed analysis**.
-
-### 7.3 Steps
-
-1. Extend students repository with `setActiveResume`.
-2. Implement complete/fail paths in worker.
-3. Add transaction-like ordering: persist analysis first, then set active resume.
-4. Verify CASCADE/SET NULL behavior still holds (Phase 3 tests).
+| Action | Path |
+| --- | --- |
+| Edit | `src/modules/resumes/resumeAnalysis.processor.ts` |
+| Edit | `src/__tests__/phase4.worker.test.ts` |
+| Edit | `src/__tests__/phase3.repositories.test.ts` |
 
 ## Milestone 7 exit checklist
 
-| Item | Done when |
+| Item | Status |
 | --- | --- |
-| Completed analysis row fully populated | All key columns set |
-| `students.resume_id` updated on success | Points to new resume |
-| Failed analysis does not clobber active resume | Default rule verified |
-| History preserved | Prior resumes/analyses remain |
-| Optional skill sync documented | Behavior clear if enabled |
+| Completed analysis row fully populated (M6) | Done |
+| `students.resume_id` updated on success | Done |
+| Failed analysis does not clobber active resume | Done |
+| History preserved (old resumes remain) | Done |
+| Optional skill sync documented as out of scope | Done |
+
+**What comes next:** Milestone 8 — read/poll/delete APIs + Swagger.
 
 ---
 
@@ -1065,9 +1195,9 @@ Script: `npm run test:phase4`.
 | --- | --- | --- | --- |
 | 1 | All milestones 1–9 complete and tested | Pending | |
 | 2 | Student can upload PDF and receive 202 + analysis id | Pending | |
-| 3 | Worker completes OpenAI scoring and persists `resume_analysis` | Pending | |
-| 4 | Failed jobs mark `failed` with reason; retries documented | Pending | |
-| 5 | `students.resume_id` updated only on successful analysis | Pending | |
+| 3 | Worker completes OpenAI scoring and persists `resume_analysis` | Done | M5–M6 |
+| 4 | Failed jobs mark `failed` with reason; retries documented | Done | M4 worker |
+| 5 | `students.resume_id` updated only on successful analysis | Done | M7 processor |
 | 6 | Only owning student can access own resumes/analysis | Pending | |
 | 7 | Secrets via env only (`OPENAI_API_KEY`, Redis, Supabase) | Pending | |
 | 8 | Phase 4 test suite green | Pending | |
@@ -1076,7 +1206,7 @@ Script: `npm run test:phase4`.
 
 ### Phase 4 verdict
 
-**In progress.** Milestones 1–4 are complete (contracts, schema/repository, upload pipeline, BullMQ worker). Milestones 5–9 (extraction, OpenAI, persistence, read APIs, test matrix) remain.
+**In progress.** Milestones 1–7 are complete (full upload → analyze → persist → active resume pipeline). Milestones 8–9 (read APIs, test matrix) remain.
 
 ---
 
@@ -1103,7 +1233,9 @@ Script: `npm run test:phase4`.
 | `src/config/redis.ts` | Shared Redis connection for BullMQ | Done (M4) |
 | `src/queues/resumeAnalysis.queue.ts` | Enqueue analysis jobs | Done (M4) |
 | `src/workers/resumeAnalysis.worker.ts` | BullMQ worker | Done (M4) |
-| `src/__tests__/phase4.*.test.ts` | Phase 4 tests | Partial (M1–M4) |
+| `src/modules/resumes/resumes.extract.ts` | PDF text extraction | Done (M5) |
+| `src/modules/resumes/resumes.openai.ts` | OpenAI scoring | Done (M6) |
+| `src/__tests__/phase4.*.test.ts` | Phase 4 tests | Partial (M1–M6) |
 
 # Appendix C — Environment variables (Phase 4)
 
@@ -1113,9 +1245,10 @@ Script: `npm run test:phase4`.
 | `RESUME_ANALYSIS_QUEUE_CONCURRENCY` | Worker | Default `3` |
 | `RESUME_ANALYSIS_JOB_ATTEMPTS` | Queue retries | Default `3` |
 | `RESUME_ANALYSIS_BACKOFF_MS` | Queue backoff | Default `5000` |
-| `OPENAI_API_KEY` | Worker | Never commit |
-| `OPENAI_MODEL` | Worker | Default e.g. `gpt-4o-mini` |
-| `OPENAI_TIMEOUT_MS` | Worker | Optional |
+| `OPENAI_API_KEY` | Worker | Required for analysis; never commit |
+| `OPENAI_MODEL` | Worker | Default `gpt-4o-mini` |
+| `OPENAI_TIMEOUT_MS` | Worker | Default `60000` |
+| `RESUME_MIN_EXTRACT_CHARS` | Worker extract | Default `100` |
 | `RESUME_STORAGE_BUCKET` | API + worker | Default `resumes` |
 | `RESUME_MAX_BYTES` | API | Default 5 MB |
 | Existing `SUPABASE_*` | API + worker | Service role for Storage + DB |

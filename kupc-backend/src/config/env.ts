@@ -31,7 +31,11 @@ const envSchema = z.object({
   RESUME_STORAGE_BUCKET: z.string().min(1).default('resumes'),
   RESUME_ANALYSIS_QUEUE_CONCURRENCY: z.coerce.number().int().positive().default(3),
   RESUME_ANALYSIS_JOB_ATTEMPTS: z.coerce.number().int().positive().default(3),
-  RESUME_ANALYSIS_BACKOFF_MS: z.coerce.number().int().positive().default(5_000)
+  RESUME_ANALYSIS_BACKOFF_MS: z.coerce.number().int().positive().default(5_000),
+  RESUME_MIN_EXTRACT_CHARS: z.coerce.number().int().positive().default(100),
+  OPENAI_API_KEY: z.string().min(1).optional(),
+  OPENAI_MODEL: z.string().min(1).default('gpt-4o-mini'),
+  OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000)
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
