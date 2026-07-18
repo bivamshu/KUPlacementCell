@@ -857,4 +857,4 @@ Phase 7 **milestones are complete**. Items below are intentionally out of scope 
 | Matches screen | Fake companies | Live `GET /matches/me` |
 | Chat | Mock | Still mock (Phase 8) |
 
-**Next phase:** Phase 8 — open conversation threads per match; wire Chat UI; do not invent ad-hoc chat outside match-scoped conversations.
+**Next phase:** Phase 8 — Chat & Conversations. Spec: `documentation/KUPC_Phase8_Specification.pdf` (regenerate with `python scripts/generate_phase8_spec.py`).
