@@ -73,7 +73,10 @@ export const jobsController = {
 
   listFeed: (async (req, res, next) => {
     try {
-      const data = await jobsService.listFeed(req.user!.id, req.query as unknown as JobListQuery);
+      const data = await jobsService.listFeed(
+        { id: req.user!.id, role: req.user!.role },
+        req.query as unknown as JobListQuery
+      );
       res.status(200).json(successResponse(data, 'Open jobs retrieved'));
     } catch (error) {
       next(error);
@@ -82,7 +85,10 @@ export const jobsController = {
 
   getPublic: (async (req, res, next) => {
     try {
-      const data = await jobsService.getPublic(req.params.id as string, req.user!.id);
+      const data = await jobsService.getPublic(req.params.id as string, {
+        id: req.user!.id,
+        role: req.user!.role
+      });
       res.status(200).json(successResponse(data, 'Job retrieved'));
     } catch (error) {
       next(error);

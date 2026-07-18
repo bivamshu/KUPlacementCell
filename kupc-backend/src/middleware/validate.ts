@@ -9,6 +9,20 @@ type RequestSchemaOutput = {
   params?: unknown;
 };
 
+/**
+ * Express 5 rebuilds `req.query` / `req.params` from the URL on every access.
+ * Mutating the object from a prior read (Object.assign) is discarded — replace
+ * the property so coerced defaults (e.g. feed limit/offset) survive.
+ */
+function replaceRequestProperty(req: object, key: 'query' | 'params', value: unknown): void {
+  Object.defineProperty(req, key, {
+    value,
+    writable: true,
+    enumerable: true,
+    configurable: true
+  });
+}
+
 export const validate = (schema: ZodSchema<RequestSchemaOutput>): RequestHandler => {
   return (req, res, next) => {
     const result = schema.safeParse({
@@ -31,12 +45,12 @@ export const validate = (schema: ZodSchema<RequestSchemaOutput>): RequestHandler
       req.body = result.data.body;
     }
 
-    if (result.data.query !== undefined && typeof req.query === 'object' && req.query !== null) {
-      Object.assign(req.query as any, result.data.query);
+    if (result.data.query !== undefined) {
+      replaceRequestProperty(req, 'query', result.data.query);
     }
 
-    if (result.data.params !== undefined && typeof req.params === 'object' && req.params !== null) {
-      Object.assign(req.params as any, result.data.params);
+    if (result.data.params !== undefined) {
+      replaceRequestProperty(req, 'params', result.data.params);
     }
 
     next();

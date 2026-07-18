@@ -32,10 +32,21 @@ jest.mock('../database/companies.repository', () => ({
   }
 }));
 
+jest.mock('../database/jobs.repository', () => ({
+  jobsRepository: {
+    create: jest.fn(),
+    findById: jest.fn(),
+    listByCompany: jest.fn(),
+    update: jest.fn(),
+    deleteById: jest.fn(),
+    listOpenFiltered: jest.fn()
+  }
+}));
+
 import app from '../app';
 import { companiesRepository } from '../database/companies.repository';
+import { jobsRepository } from '../database/jobs.repository';
 import { AUTH_ERROR_CODES, Role } from '../modules/auth';
-import { JOB_ERROR_CODES } from '../modules/jobs';
 
 jest.mock('../middleware/authenticate', () => ({
   authenticate: (req: any, _res: any, next: any) => {
@@ -127,7 +138,7 @@ describe('Phase 6 Milestone B1 - jobs module scaffold', () => {
     expect(res.body?.error?.code).toBe(AUTH_ERROR_CODES.PENDING_VERIFICATION);
   });
 
-  it('POST /jobs as approved COMPANY with valid body -> 501 NOT_IMPLEMENTED (B2 fills CRUD)', async () => {
+  it('POST /jobs as approved COMPANY with valid body -> 201 draft (B2)', async () => {
     (companiesRepository.findByUserId as jest.Mock).mockResolvedValue({
       id: '550e8400-e29b-41d4-a716-446655440099',
       company_name: 'Acme',
@@ -140,14 +151,26 @@ describe('Phase 6 Milestone B1 - jobs module scaffold', () => {
       created_at: '2026-07-17T00:00:00.000Z',
       updated_at: '2026-07-17T00:00:00.000Z'
     });
+    (jobsRepository.create as jest.Mock).mockResolvedValue({
+      id: '550e8400-e29b-41d4-a716-446655440001',
+      company_id: '550e8400-e29b-41d4-a716-446655440099',
+      title: validCreateBody.title,
+      description: validCreateBody.description,
+      location: validCreateBody.location,
+      job_type: validCreateBody.job_type,
+      min_cgpa: validCreateBody.min_cgpa,
+      status: 'draft',
+      created_at: '2026-07-17T10:00:00.000Z',
+      updated_at: '2026-07-17T10:00:00.000Z'
+    });
 
     const res = await request(app)
       .post('/api/v1/jobs')
       .set('x-test-role', Role.COMPANY)
       .send(validCreateBody);
 
-    expect(res.status).toBe(501);
-    expect(res.body?.error?.code).toBe(JOB_ERROR_CODES.NOT_IMPLEMENTED);
+    expect(res.status).toBe(201);
+    expect(res.body.data.status).toBe('draft');
     expect(res.body?.data?.job_id).toBeUndefined();
   });
 
@@ -174,11 +197,5 @@ describe('Phase 6 Milestone B1 - jobs module scaffold', () => {
   it('GET /jobs/saved as COMPANY -> 403', async () => {
     const res = await request(app).get('/api/v1/jobs/saved').set('x-test-role', Role.COMPANY);
     expect(res.status).toBe(403);
-  });
-
-  it('GET /jobs as STUDENT -> 501 NOT_IMPLEMENTED (B3)', async () => {
-    const res = await request(app).get('/api/v1/jobs').set('x-test-role', Role.STUDENT);
-    expect(res.status).toBe(501);
-    expect(res.body?.error?.code).toBe(JOB_ERROR_CODES.NOT_IMPLEMENTED);
   });
 });

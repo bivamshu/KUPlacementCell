@@ -7,7 +7,7 @@ const swaggerDefinition = {
     title: 'KUPC API',
     version: config.api.version,
     description:
-      'OpenAPI documentation for KUPC backend — Phase 2 auth, Phase 4 resume upload and analysis, Phase 5 student and company profiles.'
+      'OpenAPI documentation for KUPC backend — Phase 2 auth, Phase 4 resumes, Phase 5 profiles, Phase 6 job posting and discovery.'
   },
   servers: [
     {
@@ -169,6 +169,73 @@ const swaggerDefinition = {
           website: { type: 'string', format: 'uri', nullable: true },
           industry: { type: 'string', nullable: true, maxLength: 100 },
           description: { type: 'string', nullable: true, maxLength: 2000 }
+        }
+      },
+      Job: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          company_id: { type: 'string', format: 'uuid' },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          location: { type: 'string', nullable: true },
+          job_type: { type: 'string', enum: ['internship', 'full_time', 'part_time'], nullable: true },
+          min_cgpa: { type: 'number', nullable: true },
+          status: { type: 'string', enum: ['open', 'closed', 'draft'] },
+          created_at: { type: 'string', format: 'date-time' },
+          updated_at: { type: 'string', format: 'date-time' }
+        }
+      },
+      JobCompanySummary: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          company_name: { type: 'string' },
+          logo_url: { type: 'string', nullable: true },
+          industry: { type: 'string', nullable: true },
+          website: { type: 'string', nullable: true }
+        }
+      },
+      JobFeedCard: {
+        allOf: [
+          { $ref: '#/components/schemas/Job' },
+          {
+            type: 'object',
+            properties: {
+              company: { $ref: '#/components/schemas/JobCompanySummary' },
+              is_saved: { type: 'boolean' }
+            }
+          }
+        ]
+      },
+      CreateJob: {
+        type: 'object',
+        required: ['title', 'description'],
+        description: 'Creates a draft job. status is never client-settable.',
+        properties: {
+          title: { type: 'string', minLength: 2, maxLength: 120 },
+          description: { type: 'string', minLength: 20, maxLength: 10000 },
+          location: { type: 'string', nullable: true },
+          job_type: { type: 'string', enum: ['internship', 'full_time', 'part_time'], nullable: true },
+          min_cgpa: { type: 'number', nullable: true, minimum: 0, maximum: 4 }
+        }
+      },
+      UpdateJob: {
+        type: 'object',
+        minProperties: 1,
+        description: 'status is not PATCHable — use publish/close endpoints',
+        properties: {
+          title: { type: 'string', minLength: 2, maxLength: 120 },
+          description: { type: 'string', minLength: 20, maxLength: 10000 },
+          location: { type: 'string', nullable: true },
+          job_type: { type: 'string', enum: ['internship', 'full_time', 'part_time'], nullable: true },
+          min_cgpa: { type: 'number', nullable: true, minimum: 0, maximum: 4 }
+        }
+      },
+      SavedToggle: {
+        type: 'object',
+        properties: {
+          saved: { type: 'boolean' }
         }
       }
     }
@@ -376,17 +443,6 @@ const swaggerDefinition = {
         responses: {
           '200': { description: 'Admin access confirmed' },
           '403': { description: 'INSUFFICIENT_ROLE' }
-        }
-      }
-    },
-    '/jobs': {
-      post: {
-        tags: ['Protected'],
-        summary: 'Create job (Phase 2 placeholder — requires approved company)',
-        security: [{ bearerAuth: [] }],
-        responses: {
-          '201': { description: 'Placeholder job created' },
-          '403': { description: 'PENDING_VERIFICATION or INSUFFICIENT_ROLE' }
         }
       }
     },
@@ -818,6 +874,378 @@ const swaggerDefinition = {
           },
           '400': { description: 'VALIDATION_ERROR (non-UUID id)' },
           '404': { description: 'COMPANY_NOT_FOUND (unknown, pending, or rejected company)' }
+        }
+      }
+    },
+    '/jobs': {
+      get: {
+        tags: ['Jobs'],
+        summary: 'List open jobs (Discover feed)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'q', in: 'query', schema: { type: 'string' }, description: 'Search title/description' },
+          {
+            name: 'job_type',
+            in: 'query',
+            schema: { type: 'string', enum: ['internship', 'full_time', 'part_time'] }
+          },
+          { name: 'location', in: 'query', schema: { type: 'string' } },
+          {
+            name: 'min_cgpa',
+            in: 'query',
+            schema: { type: 'number', minimum: 0, maximum: 4 },
+            description: 'Jobs with no CGPA requirement or requirement ≤ this value'
+          },
+          { name: 'limit', in: 'query', schema: { type: 'integer', minimum: 1, maximum: 50, default: 20 } },
+          { name: 'offset', in: 'query', schema: { type: 'integer', minimum: 0, default: 0 } }
+        ],
+        responses: {
+          '200': {
+            description: 'Open jobs from approved companies',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { type: 'array', items: { $ref: '#/components/schemas/JobFeedCard' } }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '401': { description: 'MISSING_TOKEN' }
+        }
+      },
+      post: {
+        tags: ['Jobs'],
+        summary: 'Create a draft job (verified company)',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/CreateJob' }
+            }
+          }
+        },
+        responses: {
+          '201': {
+            description: 'Draft created',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/Job' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '400': { description: 'VALIDATION_ERROR' },
+          '403': { description: 'INSUFFICIENT_ROLE or PENDING_VERIFICATION' }
+        }
+      }
+    },
+    '/jobs/me': {
+      get: {
+        tags: ['Jobs'],
+        summary: 'List own company jobs (all statuses)',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Company jobs',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { type: 'array', items: { $ref: '#/components/schemas/Job' } }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '403': { description: 'INSUFFICIENT_ROLE or PENDING_VERIFICATION' }
+        }
+      }
+    },
+    '/jobs/me/{id}': {
+      get: {
+        tags: ['Jobs'],
+        summary: 'Get own job by id',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        responses: {
+          '200': {
+            description: 'Job detail',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/Job' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '403': { description: 'JOB_FORBIDDEN' },
+          '404': { description: 'JOB_NOT_FOUND' }
+        }
+      },
+      patch: {
+        tags: ['Jobs'],
+        summary: 'Update own job fields (not status)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/UpdateJob' }
+            }
+          }
+        },
+        responses: {
+          '200': {
+            description: 'Updated job',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/Job' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '400': { description: 'VALIDATION_ERROR' },
+          '403': { description: 'JOB_FORBIDDEN' },
+          '404': { description: 'JOB_NOT_FOUND' }
+        }
+      },
+      delete: {
+        tags: ['Jobs'],
+        summary: 'Delete own job',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        responses: {
+          '200': { description: 'Deleted' },
+          '403': { description: 'JOB_FORBIDDEN' },
+          '404': { description: 'JOB_NOT_FOUND' }
+        }
+      }
+    },
+    '/jobs/me/{id}/publish': {
+      post: {
+        tags: ['Jobs'],
+        summary: 'Publish draft job (draft → open)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        responses: {
+          '200': {
+            description: 'Job is now open',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/Job' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '409': { description: 'INVALID_JOB_TRANSITION' }
+        }
+      }
+    },
+    '/jobs/me/{id}/close': {
+      post: {
+        tags: ['Jobs'],
+        summary: 'Close open job (open → closed)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        responses: {
+          '200': {
+            description: 'Job is now closed',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/Job' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '409': { description: 'INVALID_JOB_TRANSITION' }
+        }
+      }
+    },
+    '/jobs/saved': {
+      get: {
+        tags: ['Jobs'],
+        summary: 'List saved jobs for the current student',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Saved open jobs',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { type: 'array', items: { $ref: '#/components/schemas/JobFeedCard' } }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '403': { description: 'INSUFFICIENT_ROLE' }
+        }
+      }
+    },
+    '/jobs/{id}': {
+      get: {
+        tags: ['Jobs'],
+        summary: 'Get public job detail (open + approved company only)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        responses: {
+          '200': {
+            description: 'Job feed card',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/JobFeedCard' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '404': { description: 'JOB_NOT_FOUND (missing, draft, closed, or pending company)' }
+        }
+      }
+    },
+    '/jobs/{id}/save': {
+      post: {
+        tags: ['Jobs'],
+        summary: 'Save / bookmark an open job (student)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        responses: {
+          '200': {
+            description: 'Saved',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/SavedToggle' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '404': { description: 'JOB_NOT_FOUND' }
+        }
+      },
+      delete: {
+        tags: ['Jobs'],
+        summary: 'Unsave a job (student, idempotent)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        responses: {
+          '200': {
+            description: 'Unsaved',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/SavedToggle' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
         }
       }
     }

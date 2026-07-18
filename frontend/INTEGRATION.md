@@ -1,7 +1,7 @@
 # KUPC Frontend ↔ Backend Integration
 
 **Last updated:** 2026-07-17  
-**Frontend phases:** A (F1–F2), B (F3–F4), C (F5–F7), E (F8) complete
+**Frontend phases:** A–E complete; Phase 6 jobs UI (F1–F6) complete  
 
 ## How to run the full stack
 
@@ -66,7 +66,27 @@ Tokens are stored in `localStorage` as `kupc_access` / `kupc_refresh`.
 | Company profile (`/app/company-profile`) | **Live** — GET/PATCH/logo + verification badge |
 | Resume analyzer (`/app/resume`) | **Live** — upload, poll analysis, list, delete |
 | Settings sign-out | **Live** — clears tokens |
-| Discover / matches / chat / saved / kanban / admin approval / analytics | **Mock** — Phase 6+ (jobs API scaffold B1/F1 landed; UI wiring F2–F5 pending) |
+| Discover (`/app/discover`) | **Live** — open jobs feed, filters, save/unsave (swipe UI local / Phase 7) |
+| Job detail (`/app/jobs/:id`) | **Live** — full description, save toggle, company card |
+| Public company (`/app/companies/:id`) | **Live** — approved company card from Phase 5 API |
+| Saved (`/app/saved`) | **Live** — `GET /jobs/saved` + unsave |
+| Job Post list (`/app/job-post`) | **Live** — list own jobs; publish / close / delete |
+| Job Post form (`/app/job-post/new`, `/app/job-post/:jobId`) | **Live** — create/edit draft + publish |
+| Matches / chat / kanban / admin approval / analytics | **Mock** — Phase 7+ |
+
+## Seed demo accounts
+
+Seed data is created with `npm run db:seed` in `kupc-backend` (~100 students, ~50 companies, ~200 jobs). All seed passwords:
+
+`SeedPass123!`
+
+| Role | Email | Notes |
+| --- | --- | --- |
+| Student | `seed.student.001@ku.edu.np` | Through `seed.student.100@…` |
+| Company (approved) | `seed.company.001@example.com` | Companies `001`–`035` are approved |
+| Company (pending) | `seed.company.040@example.com` | Roughly `036`–`045` pending |
+
+After login as student → **Discover** / **Saved**. As approved company → **Job Posts**.
 
 ## Auth flow
 
@@ -94,4 +114,5 @@ Tokens are stored in `localStorage` as `kupc_access` / `kupc_refresh`.
 - [ ] Profile edit + reload persists
 - [ ] Avatar / logo upload updates image
 - [ ] PDF resume upload → pending → completed (worker running)
-- [ ] Discover still works as a mock demo
+- [ ] Discover shows seeded open jobs (student seed account)
+- [ ] Job Posts lists seeded roles (approved company seed account)

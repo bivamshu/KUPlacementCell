@@ -29,11 +29,13 @@ Default API: `http://localhost:5000/api/v1`. See [`INTEGRATION.md`](INTEGRATION.
 | --- | --- | --- | --- |
 | **A** | F1–F2 API + AuthContext | [`documentation/PHASE_A_DOCUMENTATION.md`](documentation/PHASE_A_DOCUMENTATION.md) | Complete |
 | **B–E** | F3–F8 auth UI, profiles, resume, polish | [`documentation/PHASE_B_E_DOCUMENTATION.md`](documentation/PHASE_B_E_DOCUMENTATION.md) | Complete |
+| **6 (jobs)** | Backend B1–B5 + frontend F1–F6 | [`../kupc-backend/documentation/PHASE_6_DOCUMENTATION.md`](../kupc-backend/documentation/PHASE_6_DOCUMENTATION.md) | Complete |
 
 ## Live features
 
 - Auth: register / OTP / login / admin login / logout
 - Student & company profiles (including avatar/logo)
 - Resume upload + AI analysis polling
+- Jobs: company post/manage, student Discover feed, Saved, job detail, public company card
 
-Still mocked until later backend phases: discover, matches, chat, job posts, applicant kanban, admin approval UI.
+Still mocked (Phase 7+): matches / swipe persistence, chat, applicant kanban, admin approval UI, analytics.

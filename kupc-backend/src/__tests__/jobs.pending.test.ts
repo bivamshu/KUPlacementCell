@@ -30,10 +30,16 @@ jest.mock('../database/companies.repository', () => ({
   }
 }));
 
+jest.mock('../database/jobs.repository', () => ({
+  jobsRepository: {
+    create: jest.fn()
+  }
+}));
+
 import app from '../app';
 import { companiesRepository } from '../database/companies.repository';
+import { jobsRepository } from '../database/jobs.repository';
 import { AUTH_ERROR_CODES, Role } from '../modules/auth';
-import { JOB_ERROR_CODES } from '../modules/jobs';
 
 jest.mock('../middleware/authenticate', () => ({
   authenticate: (req: any, _res: any, next: any) => {
@@ -88,7 +94,7 @@ describe('Milestone 7 - POST /api/v1/jobs pending company gate', () => {
     expect(res.body?.error?.code).toBe(AUTH_ERROR_CODES.PENDING_VERIFICATION);
   });
 
-  it('Approved company with valid body -> 501 NOT_IMPLEMENTED (Phase 6 B1 scaffold)', async () => {
+  it('Approved company with valid body -> 201 draft (Phase 6 B2)', async () => {
     (companiesRepository.findByUserId as jest.Mock).mockResolvedValue({
       id: 'company-user-id',
       company_name: 'Acme',
@@ -101,11 +107,23 @@ describe('Milestone 7 - POST /api/v1/jobs pending company gate', () => {
       created_at: '2026-07-17T00:00:00.000Z',
       updated_at: '2026-07-17T00:00:00.000Z'
     });
+    (jobsRepository.create as jest.Mock).mockResolvedValue({
+      id: '550e8400-e29b-41d4-a716-446655440001',
+      company_id: 'company-user-id',
+      title: validBody.title,
+      description: validBody.description,
+      location: null,
+      job_type: 'internship',
+      min_cgpa: null,
+      status: 'draft',
+      created_at: '2026-07-17T10:00:00.000Z',
+      updated_at: '2026-07-17T10:00:00.000Z'
+    });
 
     const res = await request(app).post('/api/v1/jobs').set('x-test-role', Role.COMPANY).send(validBody);
 
-    expect(res.status).toBe(501);
-    expect(res.body?.error?.code).toBe(JOB_ERROR_CODES.NOT_IMPLEMENTED);
+    expect(res.status).toBe(201);
+    expect(res.body.data.status).toBe('draft');
     expect(res.body?.data?.job_id).not.toBe('placeholder-job-id');
   });
 

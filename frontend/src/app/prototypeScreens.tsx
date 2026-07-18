@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  Compass, Heart, MessageSquare, FileText, Bookmark,
+  Compass, Heart, MessageSquare, FileText,
   User, Settings, Briefcase, Users, Bell, Search, X, Check,
   Star, ChevronRight, Send, Paperclip, Phone, Video,
-  Building2, MapPin, DollarSign, Clock, TrendingUp,
+  Building2, Clock, TrendingUp,
   ArrowRight, Filter, MoreHorizontal,
   AlertCircle, CheckCircle, XCircle, Eye, Trash2, RotateCcw,
-  Calendar, ExternalLink, PlusCircle, SlidersHorizontal
+  Calendar, ExternalLink, PlusCircle
 } from "lucide-react";
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, AreaChart, Area } from "recharts";
 
@@ -308,194 +308,7 @@ export function StudentDashboard({ onNavigate }: { onNavigate: (s: Screen) => vo
   );
 }
 
-export function DiscoverPage() {
-  const [cardIndex, setCardIndex] = useState(0);
-  const [, setDragging] = useState(false);
-  const [direction, setDirection] = useState<"left" | "right" | null>(null);
-  const [dragX, setDragX] = useState(0);
-  const company = COMPANIES[cardIndex % COMPANIES.length];
-
-  const handleSwipe = (dir: "left" | "right") => {
-    setDirection(dir);
-    setTimeout(() => {
-      setCardIndex(i => i + 1);
-      setDirection(null);
-      setDragX(0);
-    }, 350);
-  };
-
-  const rotation = dragX / 20;
-  const likeOpacity = Math.max(0, dragX / 80);
-  const nopeOpacity = Math.max(0, -dragX / 80);
-
-  return (
-    <div className="h-full flex gap-4 p-4 overflow-hidden">
-      {/* Left panel */}
-      <div className="w-56 shrink-0 space-y-3">
-        <div className="bg-white rounded-2xl border border-[#E5E7EB] p-4">
-          <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-3">Recent Matches</h3>
-          <div className="space-y-2.5">
-            {MATCHES.map(m => (
-              <div key={m.id} className="flex items-center gap-2.5 cursor-pointer group">
-                <div className="w-8 h-8 rounded-lg text-white text-xs font-bold flex items-center justify-center shrink-0" style={{ background: m.color }}>{m.logo}</div>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-[#111827] truncate">{m.name}</p>
-                  <p className="text-xs text-[#9CA3AF] truncate">{m.role}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="bg-white rounded-2xl border border-[#E5E7EB] p-4">
-          <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider mb-3">Saved</h3>
-          <div className="space-y-2">
-            {COMPANIES.slice(0, 2).map(c => (
-              <div key={c.id} className="flex items-center gap-2">
-                <Bookmark size={12} className="text-[#F59E0B]" />
-                <p className="text-xs text-[#374151] truncate">{c.name}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Center swipe area */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-5 relative">
-        {/* Card stack */}
-        <div className="relative" style={{ width: 360, height: 520 }}>
-          {/* Background cards */}
-          {[2, 1].map(offset => {
-            const c = COMPANIES[(cardIndex + offset) % COMPANIES.length];
-            return (
-              <div key={offset} className="absolute inset-0 bg-white rounded-2xl border border-[#E5E7EB] shadow-md overflow-hidden"
-                style={{ transform: `scale(${1 - offset * 0.04}) translateY(${offset * 14}px)`, zIndex: 3 - offset }}>
-                <div className="h-44 bg-cover bg-center" style={{ backgroundImage: `url(${c.cover})` }} />
-                <div className="p-5">
-                  <p className="font-bold text-[#111827]">{c.name}</p>
-                  <p className="text-sm text-[#6B7280]">{c.industry}</p>
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Main swipeable card */}
-          <AnimatePresence>
-            <motion.div
-              key={cardIndex}
-              className="absolute inset-0 bg-white rounded-2xl border border-[#E5E7EB] shadow-xl overflow-hidden cursor-grab active:cursor-grabbing"
-              style={{ zIndex: 10 }}
-              drag="x"
-              dragConstraints={{ left: -200, right: 200 }}
-              onDrag={(_, info) => { setDragX(info.offset.x); setDragging(true); }}
-              onDragEnd={(_, info) => {
-                setDragging(false);
-                if (info.offset.x > 80) handleSwipe("right");
-                else if (info.offset.x < -80) handleSwipe("left");
-                else setDragX(0);
-              }}
-              animate={direction ? { x: direction === "right" ? 500 : -500, opacity: 0, rotate: direction === "right" ? 20 : -20 } : { x: dragX, rotate: rotation }}
-              transition={direction ? { duration: 0.35 } : { type: "spring", stiffness: 400, damping: 40 }}
-            >
-              {/* Like / Nope overlays */}
-              <div className="absolute top-6 left-6 z-20 rotate-[-12deg] border-4 border-green-500 rounded-lg px-3 py-1" style={{ opacity: likeOpacity }}>
-                <span className="text-green-500 font-black text-xl tracking-widest">LIKE</span>
-              </div>
-              <div className="absolute top-6 right-6 z-20 rotate-12 border-4 border-red-500 rounded-lg px-3 py-1" style={{ opacity: nopeOpacity }}>
-                <span className="text-red-500 font-black text-xl tracking-widest">NOPE</span>
-              </div>
-
-              <div className="h-44 bg-cover bg-center relative" style={{ backgroundImage: `url(${company.cover})` }}>
-                <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
-                {company.remote && (
-                  <div className="absolute top-3 right-3 bg-green-500 text-white text-xs font-semibold px-2 py-0.5 rounded-full">Remote</div>
-                )}
-              </div>
-
-              <div className="p-5 overflow-y-auto" style={{ maxHeight: 280 }}>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold" style={{ background: company.color }}>{company.logo}</div>
-                  <div>
-                    <h2 className="font-bold text-[#111827]">{company.name}</h2>
-                    <p className="text-sm text-[#6B7280]">{company.industry}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4 text-xs text-[#6B7280] mb-3">
-                  <span className="flex items-center gap-1"><MapPin size={11} />{company.location}</span>
-                  <span className="flex items-center gap-1"><DollarSign size={11} />{company.salary}</span>
-                  <span className="flex items-center gap-1"><Users size={11} />{company.size}</span>
-                </div>
-
-                <div className="flex items-center gap-2 mb-3">
-                  <Briefcase size={12} className="text-[#6B7280]" />
-                  <p className="text-xs font-medium text-[#374151]">{company.roles.join(", ")}</p>
-                </div>
-
-                <div className="flex gap-1.5 flex-wrap mb-3">
-                  {company.skills.map(s => <SkillTag key={s} label={s} />)}
-                </div>
-
-                <p className="text-xs text-[#6B7280] leading-relaxed">{company.about}</p>
-              </div>
-            </motion.div>
-          </AnimatePresence>
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-5">
-          <button onClick={() => handleSwipe("left")} className="w-14 h-14 rounded-full bg-white border-2 border-[#EF4444] flex items-center justify-center text-[#EF4444] hover:bg-red-50 transition-all hover:scale-105 shadow-md">
-            <X size={22} />
-          </button>
-          <button onClick={() => handleSwipe("right")} className="w-10 h-10 rounded-full bg-white border-2 border-[#F59E0B] flex items-center justify-center text-[#F59E0B] hover:bg-amber-50 transition-all shadow-md">
-            <Star size={16} />
-          </button>
-          <button onClick={() => handleSwipe("right")} className="w-14 h-14 rounded-full bg-white border-2 border-[#22C55E] flex items-center justify-center text-[#22C55E] hover:bg-green-50 transition-all hover:scale-105 shadow-md">
-            <Heart size={22} />
-          </button>
-        </div>
-
-        <p className="text-xs text-[#9CA3AF]">Drag card or use buttons · {COMPANIES.length - (cardIndex % COMPANIES.length)} companies left</p>
-      </div>
-
-      {/* Right filters panel */}
-      <div className="w-56 shrink-0">
-        <div className="bg-white rounded-2xl border border-[#E5E7EB] p-4">
-          <div className="flex items-center gap-2 mb-4">
-            <SlidersHorizontal size={14} className="text-[#6B7280]" />
-            <h3 className="text-xs font-semibold text-[#6B7280] uppercase tracking-wider">Filters</h3>
-          </div>
-          <div className="space-y-4">
-            {[
-              { label: "Industry", options: ["All", "Software", "AI/ML", "FinTech", "EdTech"] },
-              { label: "Job Type", options: ["All", "Full-time", "Internship", "Contract"] },
-              { label: "Work Mode", options: ["All", "Remote", "Hybrid", "On-site"] },
-            ].map(f => (
-              <div key={f.label}>
-                <p className="text-xs font-medium text-[#374151] mb-1.5">{f.label}</p>
-                <select className="w-full text-xs border border-[#E5E7EB] rounded-lg px-2.5 py-1.5 text-[#374151] bg-white focus:outline-none focus:border-[#2563EB]">
-                  {f.options.map(o => <option key={o}>{o}</option>)}
-                </select>
-              </div>
-            ))}
-            <div>
-              <p className="text-xs font-medium text-[#374151] mb-1.5">Min Salary</p>
-              <input type="range" min="20000" max="200000" defaultValue="60000" className="w-full accent-[#2563EB]" />
-              <p className="text-xs text-[#9CA3AF] mt-1">NPR 60,000+</p>
-            </div>
-            <div>
-              <p className="text-xs font-medium text-[#374151] mb-1.5">Company Size</p>
-              <div className="flex gap-1 flex-wrap">
-                {["All", "1–50", "50–200", "200+"].map(s => (
-                  <button key={s} className="text-xs px-2 py-0.5 rounded-full border border-[#E5E7EB] text-[#6B7280] hover:border-[#2563EB] hover:text-[#2563EB] transition-colors first:bg-blue-50 first:border-blue-200 first:text-blue-700">{s}</button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+// Discover live screen: src/app/screens/DiscoverPage.tsx (Phase 6 F4)
 
 export function MatchesPage({ onNavigate }: { onNavigate: (s: Screen) => void }) {
   return (
@@ -635,12 +448,30 @@ export function ChatPage() {
   );
 }
 
-export function CompanyDashboard({ onNavigate }: { onNavigate: (s: Screen) => void }) {
+export function CompanyDashboard({ onNavigate }: { onNavigate: (s: string) => void }) {
   return (
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-[#111827]">Dashboard</h1>
         <p className="text-[#6B7280] text-sm mt-0.5">Leapfrog Technology — Recruiter Portal</p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => onNavigate('job-post')}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1D4ED8]"
+        >
+          <Briefcase size={16} />
+          Manage job posts
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate('job-post/new')}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[#E5E7EB] px-4 py-2 text-sm font-semibold text-[#374151] hover:border-[#2563EB] hover:text-[#2563EB]"
+        >
+          Post a job
+        </button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1392,66 +1223,3 @@ export function UserManagement() {
   );
 }
 
-export function JobPosting() {
-  return (
-    <div className="p-6 max-w-3xl">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-[#111827]">Post a New Job</h1>
-          <p className="text-[#6B7280] text-sm mt-0.5">Fill in the details to publish a new opening.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="text-sm font-medium text-[#6B7280] border border-[#E5E7EB] px-4 py-2 rounded-lg hover:border-[#2563EB] hover:text-[#2563EB] transition-colors">Preview</button>
-          <button className="text-sm font-semibold bg-[#2563EB] text-white px-4 py-2 rounded-lg hover:bg-[#1D4ED8] transition-colors">Publish</button>
-        </div>
-      </div>
-      <div className="bg-white rounded-2xl border border-[#E5E7EB] p-6 space-y-5">
-        {[["Job Title", "e.g. Senior React Developer"], ["Location", "e.g. Lalitpur, Nepal"]].map(([l, p]) => (
-          <div key={l}>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">{l}</label>
-            <input placeholder={p} className="w-full px-3 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl focus:outline-none focus:border-[#2563EB]" />
-          </div>
-        ))}
-        <div className="grid md:grid-cols-3 gap-4">
-          {[["Employment Type", ["Full-time", "Part-time", "Internship", "Contract"]], ["Work Mode", ["On-site", "Hybrid", "Remote"]], ["Experience Level", ["Entry", "Mid", "Senior"]]].map(([l, opts]) => (
-            <div key={l as string}>
-              <label className="block text-sm font-medium text-[#374151] mb-1.5">{l}</label>
-              <select className="w-full px-3 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl focus:outline-none focus:border-[#2563EB] text-[#374151]">
-                {(opts as string[]).map(o => <option key={o}>{o}</option>)}
-              </select>
-            </div>
-          ))}
-        </div>
-        <div className="grid md:grid-cols-2 gap-4">
-          {[["Min Salary (NPR)", "e.g. 80000"], ["Max Salary (NPR)", "e.g. 150000"]].map(([l, p]) => (
-            <div key={l}>
-              <label className="block text-sm font-medium text-[#374151] mb-1.5">{l}</label>
-              <input placeholder={p} className="w-full px-3 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl focus:outline-none focus:border-[#2563EB]" />
-            </div>
-          ))}
-        </div>
-        {[["Job Description", "Describe the role, day-to-day responsibilities, and team culture..."], ["Requirements", "List required qualifications and experience..."], ["Responsibilities", "Outline key duties and deliverables..."]].map(([l, p]) => (
-          <div key={l}>
-            <label className="block text-sm font-medium text-[#374151] mb-1.5">{l}</label>
-            <textarea rows={4} placeholder={p} className="w-full px-3 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl focus:outline-none focus:border-[#2563EB] resize-none" />
-          </div>
-        ))}
-        <div>
-          <label className="block text-sm font-medium text-[#374151] mb-1.5">Required Skills</label>
-          <div className="flex flex-wrap gap-2 p-3 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl">
-            {["React", "TypeScript", "Node.js"].map(s => (
-              <div key={s} className="flex items-center gap-1.5 bg-[#EFF6FF] text-[#2563EB] text-xs font-medium px-2.5 py-1 rounded-lg border border-blue-100">
-                {s} <X size={10} className="cursor-pointer" />
-              </div>
-            ))}
-            <input placeholder="Add skill…" className="text-xs bg-transparent focus:outline-none text-[#374151] min-w-20" />
-          </div>
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-[#374151] mb-1.5">Application Deadline</label>
-          <input type="date" className="px-3 py-2.5 text-sm bg-[#F9FAFB] border border-[#E5E7EB] rounded-xl focus:outline-none focus:border-[#2563EB] text-[#374151]" />
-        </div>
-      </div>
-    </div>
-  );
-}

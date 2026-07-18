@@ -56,6 +56,21 @@ export const companiesRepository = {
     return this.findByUserId(id);
   },
 
+  async findByIds(ids: string[]): Promise<CompanyRecord[]> {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await supabaseAdmin.from('companies').select('*').in('id', unique);
+
+    if (error) {
+      throw error;
+    }
+
+    return data ?? [];
+  },
+
   async listByVerificationStatus(
     status: CompanyRecord['verification_status']
   ): Promise<CompanyRecord[]> {

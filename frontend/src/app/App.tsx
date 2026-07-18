@@ -1,5 +1,4 @@
 import { Navigate, Route, Routes, useNavigate } from 'react-router';
-import { Bookmark, MapPin, DollarSign } from 'lucide-react';
 import { RequireAuth, RequireGuest } from './guards';
 import { AppShell } from './layout/AppShell';
 import { screensForRole, toUiRole } from '../lib/auth/roleMap';
@@ -13,6 +12,12 @@ import { AdminLoginPage } from './screens/auth/AdminLoginPage';
 import { StudentProfilePage } from './screens/StudentProfilePage';
 import { CompanyProfilePage } from './screens/CompanyProfilePage';
 import { ResumeAnalyzerPage } from './screens/ResumeAnalyzerPage';
+import { DiscoverPage } from './screens/DiscoverPage';
+import { JobPostPage } from './screens/JobPostPage';
+import { CompanyJobsPage } from './screens/CompanyJobsPage';
+import { SavedJobsPage } from './screens/SavedJobsPage';
+import { JobDetailPage } from './screens/JobDetailPage';
+import { CompanyPublicPage } from './screens/CompanyPublicPage';
 import {
   AdminAnalytics,
   AdminOverview,
@@ -20,20 +25,14 @@ import {
   ChatPage,
   CompanyApproval,
   CompanyDashboard,
-  DiscoverPage,
   DiscoverStudents,
-  JobPosting,
   MatchesPage,
   NotificationsPage,
   SettingsPage,
-  SkillTag,
   StudentDashboard,
   UserManagement,
 } from './prototypeScreens';
 import type { ScreenId } from './prototypeNav';
-
-// MOCK: Phase 6+ — saved jobs still uses prototype company cards
-import { MOCK_COMPANIES_FOR_SAVED } from './mockSavedJobs';
 
 function RoleGate({ screen, children }: { screen: ScreenId; children: React.ReactNode }) {
   const { user } = useAuth();
@@ -68,52 +67,6 @@ function SettingsRoute() {
         void logout().then(() => navigate('/', { replace: true }));
       }}
     />
-  );
-}
-
-function SavedJobsPage() {
-  return (
-    <div className="p-6">
-      <h1 className="mb-6 text-2xl font-bold text-[#111827]">Saved Jobs</h1>
-      <p className="mb-4 text-xs text-[#9CA3AF]">MOCK: Phase 6+ — not wired to backend yet.</p>
-      <div className="grid gap-4 md:grid-cols-2">
-        {MOCK_COMPANIES_FOR_SAVED.map((c) => (
-          <div
-            key={c.id}
-            className="rounded-2xl border border-[#E5E7EB] bg-white p-5 transition-shadow hover:shadow-md"
-          >
-            <div className="mb-3 flex items-center gap-3">
-              <div
-                className="flex h-10 w-10 items-center justify-center rounded-xl text-sm font-bold text-white"
-                style={{ background: c.color }}
-              >
-                {c.logo}
-              </div>
-              <div>
-                <p className="font-semibold text-[#111827]">{c.name}</p>
-                <p className="text-xs text-[#6B7280]">{c.industry}</p>
-              </div>
-              <Bookmark size={15} className="ml-auto fill-[#F59E0B] text-[#F59E0B]" />
-            </div>
-            <div className="mb-3 flex flex-wrap gap-1.5">
-              {c.skills.slice(0, 3).map((s) => (
-                <SkillTag key={s} label={s} />
-              ))}
-            </div>
-            <div className="flex items-center gap-3 text-xs text-[#9CA3AF]">
-              <span>
-                <MapPin size={10} className="mr-1 inline" />
-                {c.location}
-              </span>
-              <span>
-                <DollarSign size={10} className="mr-1 inline" />
-                {c.salary}
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -214,6 +167,22 @@ export default function App() {
             }
           />
           <Route
+            path="jobs/:jobId"
+            element={
+              <RoleGate screen="discover">
+                <JobDetailPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="companies/:companyId"
+            element={
+              <RoleGate screen="discover">
+                <CompanyPublicPage />
+              </RoleGate>
+            }
+          />
+          <Route
             path="profile"
             element={
               <RoleGate screen="profile">
@@ -241,7 +210,23 @@ export default function App() {
             path="job-post"
             element={
               <RoleGate screen="job-post">
-                <JobPosting />
+                <CompanyJobsPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="job-post/new"
+            element={
+              <RoleGate screen="job-post">
+                <JobPostPage />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="job-post/:jobId"
+            element={
+              <RoleGate screen="job-post">
+                <JobPostPage />
               </RoleGate>
             }
           />
