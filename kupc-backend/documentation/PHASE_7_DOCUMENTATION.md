@@ -1,6 +1,6 @@
 # KUPC Phase 7 — Swipe Engine
 
-**Status:** B1–B3 complete; B4–B6 / F1–F5 pending  
+**Status:** B1–B4 complete; B5–B6 / F1–F5 pending  
 **Date:** 2026-07-18  
 **Depends on:** Phase 2 (Auth), Phase 3B (`swipes` / `matches` repos), Phase 6 (open jobs feed + Discover UI)  
 **References:** `KUPC_Phase7_Specification.pdf`  
@@ -11,7 +11,7 @@
 | B1 | Backend | Swipes/matches module scaffold & contracts | **Complete** |
 | B2 | Backend | Record swipe + feed exclusion | **Complete** |
 | B3 | Backend | Undo window (optional) | **Complete** |
-| B4 | Backend | Company interest + match create | Pending |
+| B4 | Backend | Company interest + match create | **Complete** |
 | B5 | Backend | Matches read APIs | Pending |
 | B6 | Backend | Swagger, hardening & test matrix | Pending |
 | F1 | Frontend | swipesApi + matchesApi | Pending |
@@ -249,3 +249,72 @@ Still stubbed: `GET /swipes/me`, `GET /swipes/inbound`, match routes (`501`).
 | Tests | `phase7.swipes` B3 cases + `npm run test:phase7` green |
 
 **What comes next:** Milestone B4 — company inbound interest + match create.
+
+---
+
+# Milestone B4 — Company Interest + Match Creation
+
+**Status:** Complete  
+**Depends on:** B2 right-swipes, `requireVerifiedCompany`, Phase 3B swipe/match repos  
+**Does not include:** `GET /matches/me` nested cards (B5), chat threads (Phase 8), match notifications (optional / deferred), inbound UI (F3)
+
+## What it is
+
+Verified companies list students who **right-swiped** their jobs via `GET /swipes/inbound`, then reciprocate with `POST /matches` `{ job_id, student_id }` to create a durable match. Right alone never creates a match.
+
+## Why it happens now
+
+Discover (student → job) is useless for hiring without a company inbox and an explicit reciprocation write. Matching unlocks Phase 8 chat and the Matches list (B5).
+
+## What was decided / locked
+
+| Rule | Behavior |
+| --- | --- |
+| Inbound filter | `direction === 'right'` for caller’s `company_id` only |
+| Hydration | Batch `studentsRepository.findByIds` + `jobsRepository.findByIds`; drop rows missing student/job |
+| Ownership | Job must belong to caller → else `403 MATCH_FORBIDDEN` |
+| Prerequisite | `findStudentRightSwipe` required → else `403 MATCH_FORBIDDEN` |
+| Idempotent create | Existing triple → return existing MatchDto (no 409); unique race → re-read |
+| Nested MatchDto | Flat row only in B4; nested cards in B5 |
+| Chat / notifications | Not created here (Phase 8 / optional later) |
+
+## Endpoints (live)
+
+| Method | Path | Success |
+| --- | --- | --- |
+| `GET` | `/swipes/inbound` | `200` InboundSwipeDto[] |
+| `POST` | `/matches` | `201` MatchDto |
+
+Still stubbed: `GET /swipes/me`, `GET /matches/me` (`501`).
+
+## Implementation steps (what was done)
+
+1. Added `studentsRepository.findByIds` and inbound mappers (`toInboundSwipeDto`).
+2. Implemented `swipesService.listInbound` — resolve company → right-swipes → hydrate cards.
+3. Implemented `matchesService.create` — own job + right-swipe gate → create or return existing.
+4. Added `phase7.matches.test.ts`; dropped inbound/match create scaffold `501` stubs.
+
+## Files touched
+
+| Path | Change |
+| --- | --- |
+| `src/database/students.repository.ts` | `findByIds` |
+| `src/modules/swipes/swipes.mapper.ts` | Inbound DTO helpers |
+| `src/modules/swipes/swipes.service.ts` | Live `listInbound` |
+| `src/modules/matches/matches.service.ts` | Live `create` |
+| `src/__tests__/phase7.matches.test.ts` | **Created** |
+| `src/__tests__/phase7.scaffold.test.ts` | Dropped B4 stubs |
+| `documentation/PHASE_7_DOCUMENTATION.md` | B4 section |
+
+## Milestone B4 exit checklist
+
+| Item | Done when |
+| --- | --- |
+| Inbound list | Company sees right-swipes on own jobs with student + job |
+| Match create | `POST /matches` inserts once |
+| Idempotent | Replay returns existing match |
+| Ownership | Foreign job → `403 MATCH_FORBIDDEN` |
+| No right-swipe | → `403 MATCH_FORBIDDEN` |
+| Tests | `phase7.matches` + `npm run test:phase7` green |
+
+**What comes next:** Milestone B5 — `GET /matches/me` with nested job + counterparty cards.

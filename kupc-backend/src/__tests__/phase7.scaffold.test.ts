@@ -204,17 +204,6 @@ describe('Phase 7 Milestone B1 - swipes/matches module scaffold', () => {
     expect(res.body?.error?.code).toBe(AUTH_ERROR_CODES.PENDING_VERIFICATION);
   });
 
-  it('GET /swipes/inbound as approved COMPANY -> 501 NOT_IMPLEMENTED', async () => {
-    (companiesRepository.findByUserId as jest.Mock).mockResolvedValue({
-      id: '550e8400-e29b-41d4-a716-446655440099',
-      verification_status: 'approved'
-    });
-
-    const res = await request(app).get('/api/v1/swipes/inbound').set('x-test-role', Role.COMPANY);
-    expect(res.status).toBe(501);
-    expect(res.body?.error?.code).toBe(SWIPE_ERROR_CODES.NOT_IMPLEMENTED);
-  });
-
   it('GET /swipes/me as STUDENT -> 501 NOT_IMPLEMENTED', async () => {
     const res = await request(app).get('/api/v1/swipes/me').set('x-test-role', Role.STUDENT);
     expect(res.status).toBe(501);
@@ -228,20 +217,6 @@ describe('Phase 7 Milestone B1 - swipes/matches module scaffold', () => {
       .send(validMatchBody);
     expect(res.status).toBe(403);
     expect(res.body?.error?.code).toBe(AUTH_ERROR_CODES.INSUFFICIENT_ROLE);
-  });
-
-  it('POST /matches as approved COMPANY with valid body -> 501 NOT_IMPLEMENTED', async () => {
-    (companiesRepository.findByUserId as jest.Mock).mockResolvedValue({
-      id: '550e8400-e29b-41d4-a716-446655440099',
-      verification_status: 'approved'
-    });
-
-    const res = await request(app)
-      .post('/api/v1/matches')
-      .set('x-test-role', Role.COMPANY)
-      .send(validMatchBody);
-    expect(res.status).toBe(501);
-    expect(res.body?.error?.code).toBe(MATCH_ERROR_CODES.NOT_IMPLEMENTED);
   });
 
   it('GET /matches/me as STUDENT -> 501 NOT_IMPLEMENTED', async () => {

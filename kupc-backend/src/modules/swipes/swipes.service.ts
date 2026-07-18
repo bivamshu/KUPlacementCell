@@ -1,7 +1,9 @@
 import { companiesRepository } from '../../database/companies.repository';
 import { jobsRepository } from '../../database/jobs.repository';
 import { matchesRepository } from '../../database/matches.repository';
+import { studentsRepository } from '../../database/students.repository';
 import { swipesRepository } from '../../database/swipes.repository';
+import { companyNotFoundError } from '../companies/companies.errors';
 import { jobNotFoundError } from '../jobs/jobs.errors';
 import { matchConflictError } from '../matches/matches.errors';
 import { SWIPE_UNDO_WINDOW_SECONDS } from './swipes.constants';
@@ -12,7 +14,7 @@ import {
   swipeNotImplementedError,
   swipeUndoExpiredError
 } from './swipes.errors';
-import { toSwipeDto } from './swipes.mapper';
+import { toInboundSwipeDto, toSwipeDto } from './swipes.mapper';
 import type { CreateSwipeServiceInput, InboundSwipeDto, SwipeDto } from './swipes.types';
 
 function isUniqueViolation(error: unknown): boolean {
@@ -23,8 +25,8 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /**
- * Phase 7 B2–B3 — create swipe, undo within TTL, feed exclusion via jobs module.
- * B4 inbound still stubbed.
+ * Phase 7 B2–B4 — create/undo swipe, company inbound interest.
+ * GET /swipes/me still stubbed.
  */
 export const swipesService = {
   async create(studentId: string, input: CreateSwipeServiceInput): Promise<SwipeDto> {
@@ -99,7 +101,42 @@ export const swipesService = {
     throw swipeNotImplementedError();
   },
 
-  async listInbound(_companyUserId: string): Promise<InboundSwipeDto[]> {
-    throw swipeNotImplementedError();
+  async listInbound(companyUserId: string): Promise<InboundSwipeDto[]> {
+    const company = await companiesRepository.findByUserId(companyUserId);
+
+    if (!company) {
+      throw companyNotFoundError();
+    }
+
+    const swipes = (await swipesRepository.listByCompany(company.id)).filter(
+      (swipe) => swipe.direction === 'right'
+    );
+
+    if (swipes.length === 0) {
+      return [];
+    }
+
+    const [students, jobs] = await Promise.all([
+      studentsRepository.findByIds(swipes.map((swipe) => swipe.student_id)),
+      jobsRepository.findByIds(swipes.map((swipe) => swipe.job_id))
+    ]);
+
+    const studentById = new Map(students.map((student) => [student.id, student]));
+    const jobById = new Map(jobs.map((job) => [job.id, job]));
+
+    const cards: InboundSwipeDto[] = [];
+
+    for (const swipe of swipes) {
+      const student = studentById.get(swipe.student_id);
+      const job = jobById.get(swipe.job_id);
+
+      if (!student || !job) {
+        continue;
+      }
+
+      cards.push(toInboundSwipeDto(swipe, student, job));
+    }
+
+    return cards;
   }
 };

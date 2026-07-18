@@ -59,6 +59,21 @@ export const studentsRepository = {
     return data;
   },
 
+  async findByIds(ids: string[]): Promise<StudentRecord[]> {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await supabaseAdmin.from('students').select('*').in('id', unique);
+
+    if (error) {
+      throw error;
+    }
+
+    return data ?? [];
+  },
+
   async findByKuId(kuId: string): Promise<StudentRecord | null> {
     const { data, error } = await supabaseAdmin.from('students').select('*').eq('ku_id', kuId).maybeSingle();
 
