@@ -34,7 +34,8 @@ jest.mock('../database/jobs.repository', () => ({
 jest.mock('../database/companies.repository', () => ({
   companiesRepository: {
     findById: jest.fn(),
-    findByUserId: jest.fn()
+    findByUserId: jest.fn(),
+    findByIds: jest.fn()
   }
 }));
 
@@ -54,7 +55,9 @@ jest.mock('../database/swipes.repository', () => ({
 jest.mock('../database/matches.repository', () => ({
   matchesRepository: {
     create: jest.fn(),
-    findByTriple: jest.fn()
+    findByTriple: jest.fn(),
+    listByStudent: jest.fn(),
+    listByCompany: jest.fn()
   }
 }));
 
@@ -283,5 +286,57 @@ describe('Phase 7 Milestone B4 - inbound + match create', () => {
 
     expect(res.status).toBe(404);
     expect(res.body?.error?.code).toBe(JOB_ERROR_CODES.JOB_NOT_FOUND);
+  });
+
+  it('GET /matches/me as STUDENT returns matches with job + company', async () => {
+    (matchesRepository.listByStudent as jest.Mock).mockResolvedValue([matchRow]);
+    (jobsRepository.findByIds as jest.Mock).mockResolvedValue([openJob]);
+    (companiesRepository.findByIds as jest.Mock).mockResolvedValue([approvedCompany]);
+
+    const res = await request(app).get('/api/v1/matches/me').set('x-test-role', Role.STUDENT);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0]).toMatchObject({
+      id: matchRow.id,
+      job: { id: jobId, title: 'Backend Intern', status: 'open' },
+      company: { id: companyUserId, company_name: 'Approved Co', logo_url: null }
+    });
+    expect(res.body.data[0].student).toBeUndefined();
+    expect(matchesRepository.listByStudent).toHaveBeenCalledWith(studentId);
+    expect(studentsRepository.findByIds).not.toHaveBeenCalled();
+  });
+
+  it('GET /matches/me as COMPANY returns matches with job + student', async () => {
+    (matchesRepository.listByCompany as jest.Mock).mockResolvedValue([matchRow]);
+    (jobsRepository.findByIds as jest.Mock).mockResolvedValue([openJob]);
+    (studentsRepository.findByIds as jest.Mock).mockResolvedValue([studentRow]);
+
+    const res = await request(app).get('/api/v1/matches/me').set('x-test-role', Role.COMPANY);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+    expect(res.body.data[0]).toMatchObject({
+      id: matchRow.id,
+      job: { id: jobId, title: 'Backend Intern', status: 'open' },
+      student: {
+        id: studentId,
+        full_name: 'Alex Student',
+        avatar_url: 'https://cdn.example/a.png'
+      }
+    });
+    expect(res.body.data[0].company).toBeUndefined();
+    expect(matchesRepository.listByCompany).toHaveBeenCalledWith(companyUserId);
+    expect(companiesRepository.findByIds).not.toHaveBeenCalled();
+  });
+
+  it('GET /matches/me as STUDENT returns empty list', async () => {
+    (matchesRepository.listByStudent as jest.Mock).mockResolvedValue([]);
+
+    const res = await request(app).get('/api/v1/matches/me').set('x-test-role', Role.STUDENT);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual([]);
+    expect(jobsRepository.findByIds).not.toHaveBeenCalled();
   });
 });

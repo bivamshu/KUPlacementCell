@@ -1,6 +1,6 @@
 # KUPC Phase 7 — Swipe Engine
 
-**Status:** B1–B4 complete; B5–B6 / F1–F5 pending  
+**Status:** B1–B5 complete; B6 / F1–F5 pending  
 **Date:** 2026-07-18  
 **Depends on:** Phase 2 (Auth), Phase 3B (`swipes` / `matches` repos), Phase 6 (open jobs feed + Discover UI)  
 **References:** `KUPC_Phase7_Specification.pdf`  
@@ -12,7 +12,7 @@
 | B2 | Backend | Record swipe + feed exclusion | **Complete** |
 | B3 | Backend | Undo window (optional) | **Complete** |
 | B4 | Backend | Company interest + match create | **Complete** |
-| B5 | Backend | Matches read APIs | Pending |
+| B5 | Backend | Matches read APIs | **Complete** |
 | B6 | Backend | Swagger, hardening & test matrix | Pending |
 | F1 | Frontend | swipesApi + matchesApi | Pending |
 | F2 | Frontend | Discover live swipe | Pending |
@@ -285,7 +285,7 @@ Discover (student → job) is useless for hiring without a company inbox and an 
 | `GET` | `/swipes/inbound` | `200` InboundSwipeDto[] |
 | `POST` | `/matches` | `201` MatchDto |
 
-Still stubbed: `GET /swipes/me`, `GET /matches/me` (`501`).
+Still stubbed: `GET /swipes/me` (`501`). Nested match cards land in B5.
 
 ## Implementation steps (what was done)
 
@@ -318,3 +318,65 @@ Still stubbed: `GET /swipes/me`, `GET /matches/me` (`501`).
 | Tests | `phase7.matches` + `npm run test:phase7` green |
 
 **What comes next:** Milestone B5 — `GET /matches/me` with nested job + counterparty cards.
+
+---
+
+# Milestone B5 — Matches Read APIs
+
+**Status:** Complete  
+**Depends on:** B4 match rows, `matchesRepository.listByStudent` / `listByCompany`  
+**Does not include:** Chat / messages (Phase 8), Swagger (B6), Matches UI (F4)
+
+## What it is
+
+Students and companies call `GET /matches/me` to list their matches. Each card includes the **job** stub plus the **counterparty** (company for students, student for companies). No message history.
+
+## Why it happens now
+
+Create without list leaves F4 with nowhere to render. Role-aware nesting keeps payloads small while giving both sides enough for a Matches screen.
+
+## What was decided / locked
+
+| Rule | Behavior |
+| --- | --- |
+| Student | `listByStudent(viewer.id)` → nest `job` + `company` |
+| Company | Resolve company → `listByCompany` → nest `job` + `student` |
+| Missing job | Drop that match from the response |
+| Missing counterparty | Still return match with `job` only |
+| Empty | `200 []` |
+| Auth | Student or Company (route from B1) |
+
+## Endpoints (live)
+
+| Method | Path | Success |
+| --- | --- | --- |
+| `GET` | `/matches/me` | `200` MatchDto[] (hydrated) |
+
+Still stubbed: `GET /swipes/me` (`501`).
+
+## Implementation steps (what was done)
+
+1. Extended `toMatchDto` / card helpers for nested job, student, company.
+2. Implemented `matchesService.listMine` with role-aware list + batch hydrate.
+3. Extended `phase7.matches.test.ts`; dropped scaffold `GET /matches/me → 501`.
+
+## Files touched
+
+| Path | Change |
+| --- | --- |
+| `src/modules/matches/matches.mapper.ts` | Nested card helpers |
+| `src/modules/matches/matches.service.ts` | Live `listMine` |
+| `src/__tests__/phase7.matches.test.ts` | B5 list cases |
+| `src/__tests__/phase7.scaffold.test.ts` | Removed list stub |
+| `documentation/PHASE_7_DOCUMENTATION.md` | B5 section |
+
+## Milestone B5 exit checklist
+
+| Item | Done when |
+| --- | --- |
+| Student list | Matches with `job` + `company` |
+| Company list | Matches with `job` + `student` |
+| Empty | `200 []` |
+| Tests | `phase7.matches` list cases + `npm run test:phase7` green |
+
+**What comes next:** Milestone B6 — Swagger + hardening & test matrix (or start F1 API clients in parallel).

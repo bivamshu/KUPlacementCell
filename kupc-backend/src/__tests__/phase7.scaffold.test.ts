@@ -52,7 +52,6 @@ import { companiesRepository } from '../database/companies.repository';
 import { jobsRepository } from '../database/jobs.repository';
 import { swipesRepository } from '../database/swipes.repository';
 import { AUTH_ERROR_CODES, Role } from '../modules/auth';
-import { MATCH_ERROR_CODES } from '../modules/matches';
 import { SWIPE_ERROR_CODES } from '../modules/swipes';
 
 jest.mock('../middleware/authenticate', () => ({
@@ -217,12 +216,6 @@ describe('Phase 7 Milestone B1 - swipes/matches module scaffold', () => {
       .send(validMatchBody);
     expect(res.status).toBe(403);
     expect(res.body?.error?.code).toBe(AUTH_ERROR_CODES.INSUFFICIENT_ROLE);
-  });
-
-  it('GET /matches/me as STUDENT -> 501 NOT_IMPLEMENTED', async () => {
-    const res = await request(app).get('/api/v1/matches/me').set('x-test-role', Role.STUDENT);
-    expect(res.status).toBe(501);
-    expect(res.body?.error?.code).toBe(MATCH_ERROR_CODES.NOT_IMPLEMENTED);
   });
 
   it('POST /matches with invalid body -> 400 VALIDATION_ERROR', async () => {

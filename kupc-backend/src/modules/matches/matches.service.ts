@@ -1,12 +1,19 @@
 import { companiesRepository } from '../../database/companies.repository';
 import { jobsRepository } from '../../database/jobs.repository';
+import type { MatchRecord } from '../../database/matches.repository';
 import { matchesRepository } from '../../database/matches.repository';
+import { studentsRepository } from '../../database/students.repository';
 import { swipesRepository } from '../../database/swipes.repository';
+import { Role } from '../auth';
 import { companyNotFoundError } from '../companies/companies.errors';
 import { jobNotFoundError } from '../jobs/jobs.errors';
-import { Role } from '../auth';
-import { matchForbiddenError, matchNotImplementedError } from './matches.errors';
-import { toMatchDto } from './matches.mapper';
+import { matchForbiddenError } from './matches.errors';
+import {
+  toMatchCompanyCard,
+  toMatchDto,
+  toMatchJobCard,
+  toMatchStudentCard
+} from './matches.mapper';
 import type { CreateMatchServiceInput, MatchDto } from './matches.types';
 
 export type MatchViewer = {
@@ -21,9 +28,62 @@ function isUniqueViolation(error: unknown): boolean {
   return code === '23505' || message.includes('duplicate') || message.includes('unique');
 }
 
+async function hydrateMatches(
+  matches: MatchRecord[],
+  viewerRole: Role
+): Promise<MatchDto[]> {
+  if (matches.length === 0) {
+    return [];
+  }
+
+  const [jobs, students, companies] = await Promise.all([
+    jobsRepository.findByIds(matches.map((match) => match.job_id)),
+    viewerRole === Role.COMPANY
+      ? studentsRepository.findByIds(matches.map((match) => match.student_id))
+      : Promise.resolve([]),
+    viewerRole === Role.STUDENT
+      ? companiesRepository.findByIds(matches.map((match) => match.company_id))
+      : Promise.resolve([])
+  ]);
+
+  const jobById = new Map(jobs.map((job) => [job.id, job]));
+  const studentById = new Map(students.map((student) => [student.id, student]));
+  const companyById = new Map(companies.map((company) => [company.id, company]));
+
+  const cards: MatchDto[] = [];
+
+  for (const match of matches) {
+    const job = jobById.get(match.job_id);
+    if (!job) {
+      continue;
+    }
+
+    if (viewerRole === Role.STUDENT) {
+      const company = companyById.get(match.company_id);
+      cards.push(
+        toMatchDto(match, {
+          job: toMatchJobCard(job),
+          ...(company ? { company: toMatchCompanyCard(company) } : {})
+        })
+      );
+      continue;
+    }
+
+    const student = studentById.get(match.student_id);
+    cards.push(
+      toMatchDto(match, {
+        job: toMatchJobCard(job),
+        ...(student ? { student: toMatchStudentCard(student) } : {})
+      })
+    );
+  }
+
+  return cards;
+}
+
 /**
- * Phase 7 B4 — company match create (idempotent).
- * B5 listMine still stubbed. Conversations deferred to Phase 8.
+ * Phase 7 B4–B5 — match create + role-aware list with nested cards.
+ * Conversations deferred to Phase 8.
  */
 export const matchesService = {
   async create(companyUserId: string, input: CreateMatchServiceInput): Promise<MatchDto> {
@@ -76,7 +136,23 @@ export const matchesService = {
     }
   },
 
-  async listMine(_viewer: MatchViewer): Promise<MatchDto[]> {
-    throw matchNotImplementedError();
+  async listMine(viewer: MatchViewer): Promise<MatchDto[]> {
+    if (viewer.role === Role.STUDENT) {
+      const matches = await matchesRepository.listByStudent(viewer.id);
+      return hydrateMatches(matches, Role.STUDENT);
+    }
+
+    if (viewer.role === Role.COMPANY) {
+      const company = await companiesRepository.findByUserId(viewer.id);
+
+      if (!company) {
+        throw companyNotFoundError();
+      }
+
+      const matches = await matchesRepository.listByCompany(company.id);
+      return hydrateMatches(matches, Role.COMPANY);
+    }
+
+    return [];
   }
 };
