@@ -7,4 +7,6 @@ export { studentsApi } from './studentsApi';
 export { companiesApi } from './companiesApi';
 export { resumesApi } from './resumesApi';
 export { jobsApi } from './jobsApi';
+export { swipesApi } from './swipesApi';
+export { matchesApi } from './matchesApi';
 export type * from './types';

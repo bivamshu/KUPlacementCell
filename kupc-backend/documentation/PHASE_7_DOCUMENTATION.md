@@ -1,6 +1,6 @@
 # KUPC Phase 7 — Swipe Engine
 
-**Status:** B1–B6 complete; F1–F5 pending  
+**Status:** B1–B6 complete; F1 complete; F2–F5 pending  
 **Date:** 2026-07-18  
 **Depends on:** Phase 2 (Auth), Phase 3B (`swipes` / `matches` repos), Phase 6 (open jobs feed + Discover UI)  
 **References:** `KUPC_Phase7_Specification.pdf`  
@@ -14,7 +14,7 @@
 | B4 | Backend | Company interest + match create | **Complete** |
 | B5 | Backend | Matches read APIs | **Complete** |
 | B6 | Backend | Swagger, hardening & test matrix | **Complete** |
-| F1 | Frontend | swipesApi + matchesApi | Pending |
+| F1 | Frontend | swipesApi + matchesApi | **Complete** |
 | F2 | Frontend | Discover live swipe | Pending |
 | F3 | Frontend | Company interest inbox | Pending |
 | F4 | Frontend | Matches list live | Pending |
@@ -430,3 +430,48 @@ B6 documents every Phase 7 swipe/match endpoint in OpenAPI (`/api/docs`), locks 
 | Docs | PHASE_7_DOCUMENTATION.md covers B1–B6 |
 
 **What comes next:** Frontend F1–F5 (`swipesApi` / `matchesApi`, Discover live swipe, company inbox, Matches list, polish).
+
+---
+
+# Milestone F1 — swipesApi & matchesApi
+
+**Status:** Complete  
+**Depends on:** B1–B6 contracts (swipe/match API live on backend)  
+**Does not include:** Discover wiring (F2), company inbox UI (F3), Matches screen (F4)
+
+## What it is
+
+F1 adds typed frontend clients matching the Phase 7 API contract so Discover, inbound, and Matches screens stay thin (same pattern as `jobsApi`).
+
+## Why it happens with B1–B6 done
+
+Screens must not invent fetch shapes. Clients land now so F2–F4 only wire UI.
+
+## Implementation steps (what was done)
+
+1. Extended `frontend/src/lib/api/types.ts` with swipe/match DTOs and request bodies.
+2. Created `swipesApi.ts` (`create`, `undo`, `listInbound`, `listMine`) and `matchesApi.ts` (`create`, `listMine`).
+3. Exported both from `lib/api/index.ts`.
+4. Mapped Phase 7 error codes in `errorMessages.ts`.
+
+## Files touched
+
+| Path | Change |
+| --- | --- |
+| `frontend/src/lib/api/types.ts` | Swipe/match DTOs |
+| `frontend/src/lib/api/swipesApi.ts` | **Created** |
+| `frontend/src/lib/api/matchesApi.ts` | **Created** |
+| `frontend/src/lib/api/index.ts` | Export clients |
+| `frontend/src/lib/api/errorMessages.ts` | Phase 7 codes |
+| `frontend/INTEGRATION.md` / `README.md` | Status notes |
+| `documentation/PHASE_7_DOCUMENTATION.md` | F1 section |
+
+## Milestone F1 exit checklist
+
+| Item | Done when |
+| --- | --- |
+| Clients export | `swipesApi` / `matchesApi` importable from `lib/api` |
+| Types compile | `npm run typecheck` clean |
+| Errors mapped | User-facing strings for swipe/match codes |
+
+**What comes next:** Milestone F2 — wire Discover Like/Nope to `swipesApi.create`.

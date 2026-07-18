@@ -277,3 +277,71 @@ export type JobFeedQuery = {
 export type SavedToggleResult = {
   saved: boolean;
 };
+
+// ── Phase 7 — Swipes & Matches ─────────────────────────────────────────
+
+export type SwipeDirection = 'left' | 'right';
+
+export type SwipeDto = {
+  id: string;
+  student_id: string;
+  company_id: string;
+  job_id: string;
+  direction: SwipeDirection;
+  swiped_at: string;
+};
+
+export type CreateSwipeBody = {
+  job_id: string;
+  direction: SwipeDirection;
+};
+
+export type SwipeStudentSummary = {
+  id: string;
+  full_name: string;
+  department: string | null;
+  graduation_year: number | null;
+  avatar_url: string | null;
+};
+
+export type InboundSwipeDto = {
+  swipe: SwipeDto;
+  student: SwipeStudentSummary;
+  job: {
+    id: string;
+    title: string;
+    status: string;
+  };
+};
+
+export type SwipeUndoResult = {
+  deleted: true;
+};
+
+export type MatchDto = {
+  id: string;
+  student_id: string;
+  company_id: string;
+  job_id: string;
+  matched_at: string;
+  job?: {
+    id: string;
+    title: string;
+    status: string;
+  };
+  student?: {
+    id: string;
+    full_name: string;
+    avatar_url: string | null;
+  };
+  company?: {
+    id: string;
+    company_name: string;
+    logo_url: string | null;
+  };
+};
+
+export type CreateMatchBody = {
+  job_id: string;
+  student_id: string;
+};

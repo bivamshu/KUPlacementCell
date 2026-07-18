@@ -26,7 +26,16 @@ const CODE_MESSAGES: Record<string, string> = {
   INVALID_JOB_PAYLOAD: 'Please check the job fields and try again.',
   INVALID_JOB_TRANSITION: 'That status change is not allowed for this job.',
   SAVED_JOB_NOT_FOUND: 'That job is not in your saved list.',
-  NOT_IMPLEMENTED: 'This jobs feature is not available yet.',
+  SWIPE_NOT_FOUND: 'That swipe was not found.',
+  SWIPE_CONFLICT: 'You already swiped on this job.',
+  SWIPE_JOB_NOT_OPEN: 'This job is not available to swipe.',
+  SWIPE_UNDO_EXPIRED: 'The undo window has expired.',
+  INVALID_SWIPE_PAYLOAD: 'Please check the swipe request and try again.',
+  MATCH_NOT_FOUND: 'That match was not found.',
+  MATCH_FORBIDDEN: 'You cannot create or access that match.',
+  MATCH_CONFLICT: 'A match already exists for this student and job.',
+  INVALID_MATCH_PAYLOAD: 'Please check the match request and try again.',
+  NOT_IMPLEMENTED: 'This feature is not available yet.',
 };
 
 export function messageFromError(error: unknown, fallback = 'Something went wrong. Please try again.'): string {
