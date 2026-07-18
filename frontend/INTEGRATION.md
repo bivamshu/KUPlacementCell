@@ -1,7 +1,7 @@
 # KUPC Frontend ↔ Backend Integration
 
 **Last updated:** 2026-07-18  
-**Frontend phases:** A–E complete; Phase 6 jobs UI (F1–F6) complete; Phase 7 F1 (`swipesApi` / `matchesApi`) complete  
+**Frontend phases:** A–E complete; Phase 6 jobs UI (F1–F6) complete; Phase 7 F1–F2 complete (F3–F5 pending)  
 
 ## How to run the full stack
 
@@ -66,13 +66,13 @@ Tokens are stored in `localStorage` as `kupc_access` / `kupc_refresh`.
 | Company profile (`/app/company-profile`) | **Live** — GET/PATCH/logo + verification badge |
 | Resume analyzer (`/app/resume`) | **Live** — upload, poll analysis, list, delete |
 | Settings sign-out | **Live** — clears tokens |
-| Discover (`/app/discover`) | **Live** — open jobs feed, filters, save/unsave (`swipesApi` ready; F2 wires Like/Nope) |
+| Discover (`/app/discover`) | **Live** — feed, filters, save/unsave, Like/Nope persist via `swipesApi` |
 | Job detail (`/app/jobs/:id`) | **Live** — full description, save toggle, company card |
 | Public company (`/app/companies/:id`) | **Live** — approved company card from Phase 5 API |
 | Saved (`/app/saved`) | **Live** — `GET /jobs/saved` + unsave |
 | Job Post list (`/app/job-post`) | **Live** — list own jobs; publish / close / delete |
 | Job Post form (`/app/job-post/new`, `/app/job-post/:jobId`) | **Live** — create/edit draft + publish |
-| Matches / chat / kanban / admin approval / analytics | **Mock** — Phase 7 F2–F5 + Phase 8 |
+| Matches / chat / kanban / admin approval / analytics | **Mock** — Phase 7 F3–F5 + Phase 8 |
 
 ## Seed demo accounts
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   Bookmark,
@@ -17,10 +17,13 @@ import { EmptyState } from '../../components/ui-app/EmptyState';
 import { ErrorBanner } from '../../components/ui-app/ErrorBanner';
 import { LoadingSpinner } from '../../components/ui-app/LoadingSpinner';
 import {
+  ApiError,
   jobsApi,
+  swipesApi,
   type JobFeedCard,
   type JobFeedQuery,
   type JobType,
+  type SwipeDirection,
 } from '../../lib/api';
 import { messageFromError } from '../../lib/api/errorMessages';
 
@@ -79,13 +82,17 @@ export function DiscoverPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [cardIndex, setCardIndex] = useState(0);
-  const [direction, setDirection] = useState<'left' | 'right' | null>(null);
+  const [direction, setDirection] = useState<SwipeDirection | null>(null);
   const [dragX, setDragX] = useState(0);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [swiping, setSwiping] = useState(false);
+  const [deckExhausted, setDeckExhausted] = useState(false);
+  const swipingRef = useRef(false);
 
   const load = useCallback(async (nextFilters: FilterState) => {
     setLoading(true);
     setError('');
+    setDeckExhausted(false);
     try {
       const list = await jobsApi.listFeed(toQuery(nextFilters));
       setJobs(list);
@@ -107,14 +114,42 @@ export function DiscoverPage() {
   const job = jobs[cardIndex] ?? null;
   const remaining = Math.max(0, jobs.length - cardIndex);
 
-  // MOCK: Phase 7 — swipe only advances the local deck; no match persistence.
-  function advance(dir: 'left' | 'right') {
+  function finishSwipe(dir: SwipeDirection, swipedId: string) {
     setDirection(dir);
-    setTimeout(() => {
-      setCardIndex((i) => i + 1);
+    window.setTimeout(() => {
+      setJobs((prev) => {
+        const next = prev.filter((j) => j.id !== swipedId);
+        if (next.length === 0) setDeckExhausted(true);
+        return next;
+      });
       setDirection(null);
       setDragX(0);
+      swipingRef.current = false;
+      setSwiping(false);
     }, 320);
+  }
+
+  async function recordSwipe(dir: SwipeDirection) {
+    if (!job || swipingRef.current) return;
+
+    const target = job;
+    swipingRef.current = true;
+    setSwiping(true);
+    setError('');
+
+    try {
+      await swipesApi.create({ job_id: target.id, direction: dir });
+      finishSwipe(dir, target.id);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'SWIPE_CONFLICT') {
+        finishSwipe(dir, target.id);
+        return;
+      }
+      swipingRef.current = false;
+      setSwiping(false);
+      setDragX(0);
+      setError(messageFromError(err));
+    }
   }
 
   async function toggleSave(target: JobFeedCard) {
@@ -162,7 +197,8 @@ export function DiscoverPage() {
             Discover
           </h3>
           <p className="text-xs leading-relaxed text-[#9CA3AF]">
-            Browse open roles from verified companies. Swipe is local for now — matches land in Phase 7.
+            Browse open roles from verified companies. Like or skip to record a swipe — right-swipes
+            show up for companies to match.
           </p>
         </div>
         <div className="rounded-2xl border border-[#E5E7EB] bg-white p-4">
@@ -191,38 +227,23 @@ export function DiscoverPage() {
           <LoadingSpinner label="Loading openings…" />
         ) : !job ? (
           <EmptyState
-            title={jobs.length === 0 ? 'No open jobs' : 'You’re caught up'}
+            title={deckExhausted ? 'You’re caught up' : 'No open jobs'}
             description={
-              jobs.length === 0
-                ? filters.q || filters.job_type || filters.location || filters.min_cgpa
+              deckExhausted
+                ? 'You’ve reviewed every job in this feed. Refresh later for new openings — swiped roles stay out of your deck.'
+                : filters.q || filters.job_type || filters.location || filters.min_cgpa
                   ? 'Try clearing filters or broadening your search.'
                   : 'When companies publish roles, they will show up here.'
-                : 'You’ve reviewed every job in this feed. Refresh or change filters to see more.'
             }
             icon={<Compass className="text-[#E5E7EB]" size={40} />}
             action={
-              <div className="flex flex-wrap justify-center gap-2">
-                {jobs.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCardIndex(0);
-                      setDirection(null);
-                      setDragX(0);
-                    }}
-                    className="rounded-lg border border-[#E5E7EB] px-4 py-2 text-sm font-semibold text-[#374151] hover:border-[#2563EB] hover:text-[#2563EB]"
-                  >
-                    Restart deck
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void load(filters)}
-                  className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1D4ED8]"
-                >
-                  Refresh
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => void load(filters)}
+                className="rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1D4ED8]"
+              >
+                Refresh
+              </button>
             }
           />
         ) : (
@@ -251,12 +272,13 @@ export function DiscoverPage() {
                   key={job.id}
                   className="absolute inset-0 cursor-grab overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white shadow-xl active:cursor-grabbing"
                   style={{ zIndex: 10 }}
-                  drag="x"
+                  drag={swiping ? false : 'x'}
                   dragConstraints={{ left: -200, right: 200 }}
                   onDrag={(_, info) => setDragX(info.offset.x)}
                   onDragEnd={(_, info) => {
-                    if (info.offset.x > 80) advance('right');
-                    else if (info.offset.x < -80) advance('left');
+                    if (swipingRef.current) return;
+                    if (info.offset.x > 80) void recordSwipe('right');
+                    else if (info.offset.x < -80) void recordSwipe('left');
                     else setDragX(0);
                   }}
                   animate={
@@ -350,15 +372,16 @@ export function DiscoverPage() {
             <div className="flex items-center gap-5">
               <button
                 type="button"
-                onClick={() => advance('left')}
-                className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-[#EF4444] bg-white text-[#EF4444] shadow-md transition-all hover:scale-105 hover:bg-red-50"
+                disabled={swiping}
+                onClick={() => void recordSwipe('left')}
+                className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-[#EF4444] bg-white text-[#EF4444] shadow-md transition-all hover:scale-105 hover:bg-red-50 disabled:opacity-60"
                 aria-label="Skip"
               >
                 <X size={22} />
               </button>
               <button
                 type="button"
-                disabled={savingId === job.id}
+                disabled={savingId === job.id || swiping}
                 onClick={() => void toggleSave(job)}
                 className={`flex h-10 w-10 items-center justify-center rounded-full border-2 bg-white shadow-md transition-all hover:scale-105 disabled:opacity-60 ${
                   job.is_saved
@@ -369,12 +392,12 @@ export function DiscoverPage() {
               >
                 <Star size={16} fill={job.is_saved ? 'currentColor' : 'none'} />
               </button>
-              {/* MOCK: Phase 7 — like does not create a match yet */}
               <button
                 type="button"
-                onClick={() => advance('right')}
-                className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-[#22C55E] bg-white text-[#22C55E] shadow-md transition-all hover:scale-105 hover:bg-green-50"
-                aria-label="Like (preview)"
+                disabled={swiping}
+                onClick={() => void recordSwipe('right')}
+                className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-[#22C55E] bg-white text-[#22C55E] shadow-md transition-all hover:scale-105 hover:bg-green-50 disabled:opacity-60"
+                aria-label="Like"
               >
                 <Heart size={22} />
               </button>
@@ -383,6 +406,7 @@ export function DiscoverPage() {
             <p className="text-xs text-[#9CA3AF]">
               Drag or use buttons · {remaining} opening{remaining === 1 ? '' : 's'} left
               {job.is_saved ? ' · Saved' : ''}
+              {swiping ? ' · Saving…' : ''}
             </p>
           </>
         )}

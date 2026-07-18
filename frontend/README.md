@@ -30,7 +30,7 @@ Default API: `http://localhost:5000/api/v1`. See [`INTEGRATION.md`](INTEGRATION.
 | **A** | F1–F2 API + AuthContext | [`documentation/PHASE_A_DOCUMENTATION.md`](documentation/PHASE_A_DOCUMENTATION.md) | Complete |
 | **B–E** | F3–F8 auth UI, profiles, resume, polish | [`documentation/PHASE_B_E_DOCUMENTATION.md`](documentation/PHASE_B_E_DOCUMENTATION.md) | Complete |
 | **6 (jobs)** | Backend B1–B5 + frontend F1–F6 | [`../kupc-backend/documentation/PHASE_6_DOCUMENTATION.md`](../kupc-backend/documentation/PHASE_6_DOCUMENTATION.md) | Complete |
-| **7 (swipes)** | Backend B1–B6 + frontend F1 | [`../kupc-backend/documentation/PHASE_7_DOCUMENTATION.md`](../kupc-backend/documentation/PHASE_7_DOCUMENTATION.md) | F1 complete; F2–F5 pending |
+| **7 (swipes)** | Backend B1–B6 + frontend F1–F2 | [`../kupc-backend/documentation/PHASE_7_DOCUMENTATION.md`](../kupc-backend/documentation/PHASE_7_DOCUMENTATION.md) | F1–F2 complete; F3–F5 pending |
 
 ## Live features
 
@@ -38,6 +38,6 @@ Default API: `http://localhost:5000/api/v1`. See [`INTEGRATION.md`](INTEGRATION.
 - Student & company profiles (including avatar/logo)
 - Resume upload + AI analysis polling
 - Jobs: company post/manage, student Discover feed, Saved, job detail, public company card
-- Swipes/matches API clients (`swipesApi` / `matchesApi`) — UI wiring in F2–F4
+- Discover live swipe (Like/Nope/drag → `POST /swipes`; feed excludes swiped jobs)
 
-Still mocked: Discover swipe persistence (F2), company interest inbox (F3), Matches list (F4), chat, applicant kanban, admin approval UI, analytics.
+Still mocked: company interest inbox (F3), Matches list (F4), chat, applicant kanban, admin approval UI, analytics.

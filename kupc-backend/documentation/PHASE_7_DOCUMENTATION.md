@@ -1,6 +1,6 @@
 # KUPC Phase 7 — Swipe Engine
 
-**Status:** B1–B6 complete; F1 complete; F2–F5 pending  
+**Status:** B1–B6 complete; F1–F2 complete; F3–F5 pending  
 **Date:** 2026-07-18  
 **Depends on:** Phase 2 (Auth), Phase 3B (`swipes` / `matches` repos), Phase 6 (open jobs feed + Discover UI)  
 **References:** `KUPC_Phase7_Specification.pdf`  
@@ -15,7 +15,7 @@
 | B5 | Backend | Matches read APIs | **Complete** |
 | B6 | Backend | Swagger, hardening & test matrix | **Complete** |
 | F1 | Frontend | swipesApi + matchesApi | **Complete** |
-| F2 | Frontend | Discover live swipe | Pending |
+| F2 | Frontend | Discover live swipe | **Complete** |
 | F3 | Frontend | Company interest inbox | Pending |
 | F4 | Frontend | Matches list live | Pending |
 | F5 | Frontend | Polish + docs | Pending |
@@ -475,3 +475,55 @@ Screens must not invent fetch shapes. Clients land now so F2–F4 only wire UI.
 | Errors mapped | User-facing strings for swipe/match codes |
 
 **What comes next:** Milestone F2 — wire Discover Like/Nope to `swipesApi.create`.
+
+---
+
+# Milestone F2 — Discover Live Swipe
+
+**Status:** Complete  
+**Depends on:** F1 `swipesApi`, B2 feed exclusion  
+**Does not include:** Undo UI (optional), company inbox (F3), Matches screen (F4)
+
+## What it is
+
+Discover Like / Nope / drag-end call `POST /swipes`. Success (or `SWIPE_CONFLICT`) advances the deck and removes the card locally. Backend feed exclusion means a refresh does not re-show swiped jobs. Failures surface via `ErrorBanner`.
+
+## Why it happens now
+
+Without persistence, Discover was a local carousel. F2 makes right/left durable so company inbound (F3) and matches (F4) have real data.
+
+## What was decided / locked
+
+| Rule | Behavior |
+| --- | --- |
+| Persist | `swipesApi.create({ job_id, direction })` before animate-out |
+| Conflict | `SWIPE_CONFLICT` → treat as already done; still remove card |
+| Other errors | Keep card; `ErrorBanner` + reset drag |
+| Local deck | Filter swiped id out of `jobs` (no “restart” of already-swiped cards) |
+| In-flight | Disable buttons / drag while request pending |
+
+## Implementation steps (what was done)
+
+1. Replaced local-only `advance` with `recordSwipe` on Discover.
+2. Wired drag end + Like/Nope buttons; removed `// MOCK: Phase 7` persistence comments.
+3. Updated empty state for deck-exhausted vs truly empty feed.
+4. Updated INTEGRATION / README status notes.
+
+## Files touched
+
+| Path | Change |
+| --- | --- |
+| `frontend/src/app/screens/DiscoverPage.tsx` | Live swipe persistence |
+| `frontend/INTEGRATION.md` / `README.md` | Status |
+| `documentation/PHASE_7_DOCUMENTATION.md` | F2 section |
+
+## Milestone F2 exit checklist
+
+| Item | Done when |
+| --- | --- |
+| Persist | Reload does not re-show swiped job |
+| Errors | ErrorBanner on non-conflict failure |
+| Conflict | Duplicate swipe skips card without blocking |
+| Copy | No “swipe is local” / MOCK persistence comments |
+
+**What comes next:** Milestone F3 — company interest inbox (`GET /swipes/inbound` + Match action).
