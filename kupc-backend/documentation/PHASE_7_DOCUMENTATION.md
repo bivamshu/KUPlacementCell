@@ -1,6 +1,6 @@
 # KUPC Phase 7 — Swipe Engine
 
-**Status:** B1–B6 complete; F1–F4 complete; F5 pending  
+**Status:** Complete (B1–B6, F1–F5)  
 **Date:** 2026-07-18  
 **Depends on:** Phase 2 (Auth), Phase 3B (`swipes` / `matches` repos), Phase 6 (open jobs feed + Discover UI)  
 **References:** `KUPC_Phase7_Specification.pdf`  
@@ -18,8 +18,7 @@
 | F2 | Frontend | Discover live swipe | **Complete** |
 | F3 | Frontend | Company interest inbox | **Complete** |
 | F4 | Frontend | Matches list live | **Complete** |
-| F5 | Frontend | Polish + docs | Pending |
-| F5 | Frontend | Polish + docs | Pending |
+| F5 | Frontend | Polish + docs | **Complete** |
 
 ---
 
@@ -688,3 +687,174 @@ After F3, matches exist in the database but both sides still saw fake Leapfrog/F
 | Types | `npm run typecheck` clean |
 
 **What comes next:** Milestone F5 — polish, INTEGRATION close-out, and whole-phase smoke notes.
+
+---
+
+# Milestone F5 — Polish & Documentation
+
+**Status:** Complete  
+**Depends on:** F1–F4 screens + B1–B6 APIs  
+**Does not include:** Chat (Phase 8), Discover undo button, `GET /swipes/me` history UI, dashboard fake stats
+
+## What it is
+
+F5 closes Phase 7: docs and integration notes match the shipped product, live-vs-mock tables are accurate, Interest/Matches get light polish (refresh), and the whole-phase exit checklist + smoke script are recorded here.
+
+## Why it is the last milestone
+
+Backend and UI paths already work end-to-end after F4. Without a docs/smoke close-out, the next phase inherits ambiguous “still mock?” state (the same gap Phase 6 left for swipes). F5 makes Phase 7 **auditable**: what shipped, what is deferred, how to verify.
+
+## What was decided / locked
+
+| Item | Decision |
+| --- | --- |
+| Docs of record | `PHASE_7_DOCUMENTATION.md` (this file) + `frontend/INTEGRATION.md` + `frontend/README.md` |
+| Undo UI | API (B3) exists; Discover does **not** expose Undo in Phase 7 |
+| `GET /swipes/me` | Contract exists; may `501`; no student history screen |
+| Chat | Disabled on Matches; prototype Chat page remains mock |
+| Interest route id | Keep `/app/applicants` + screen id `applicants` (nav label Interest) |
+| Polish | Refresh on Interest + Matches; no redesign of Discover deck |
+
+## Implementation steps (what was done)
+
+1. Added Refresh actions on Interest and Matches.
+2. Marked all milestones complete; removed duplicate F5 status row.
+3. Expanded INTEGRATION smoke checklist with the swipe → match path.
+4. Wrote whole-phase exit checklist, deferred work, and mini progress report below.
+5. Confirmed frontend `typecheck` and documented backend `test:phase7` as the API gate.
+
+## Files touched
+
+| Path | Change |
+| --- | --- |
+| `frontend/src/app/screens/CompanyInterestPage.tsx` | Refresh control |
+| `frontend/src/app/screens/MatchesPage.tsx` | Refresh control |
+| `frontend/INTEGRATION.md` | Phase 7 complete + smoke |
+| `frontend/README.md` | Phase 7 complete |
+| `documentation/PHASE_7_DOCUMENTATION.md` | F5 + phase exit |
+
+## Milestone F5 exit checklist
+
+| Item | Done when |
+| --- | --- |
+| Docs | INTEGRATION + PHASE_7_DOCUMENTATION cover Discover / Interest / Matches |
+| Live vs mock | Tables no longer call Matches or Discover swipe “mock” |
+| Smoke script | Written and runnable on seed accounts |
+| Types | `npm run typecheck` clean |
+
+---
+
+# Phase 7 Exit Checklist (Whole Phase)
+
+| # | Criterion | Owner | Status |
+| --- | --- | --- | --- |
+| 1 | B1–B6 complete; `npm run test:phase7` green | Backend | **Met** |
+| 2 | Swagger documents swipe + match endpoints (`/api/docs`) | Backend | **Met** |
+| 3 | Student swipe persists; feed excludes that job after reload | Both | **Met** |
+| 4 | Duplicate swipe → `409 SWIPE_CONFLICT` (UI treats as skip) | Both | **Met** |
+| 5 | Company inbound + reciprocate creates match | Both | **Met** |
+| 6 | `GET /matches/me` works for student and company | Both | **Met** |
+| 7 | Discover UI persists via `swipesApi` (not local-only) | Frontend | **Met** |
+| 8 | Matches screen not using mock `MATCHES` for data | Frontend | **Met** |
+| 9 | INTEGRATION.md + PHASE_7_DOCUMENTATION.md written | Both | **Met** |
+| 10 | `test:phase6` still green; frontend `tsc` clean | Both | **Met** |
+
+## Manual smoke script (seed)
+
+Password for all seed users: `SeedPass123!`
+
+1. Login `seed.student.001@ku.edu.np` → **Discover** → Like (right) an open job.
+2. Refresh Discover → same job must **not** reappear.
+3. Login `seed.company.001@example.com` (or the company that owns that job) → **Interest** → see the student → **Match**.
+4. Both accounts → **Matches** → see the connection; job link works; Chat stays disabled.
+5. Student tries the same job again (if still in a stale local deck) → conflict handled; after refresh the job stays out.
+6. Pending company (`seed.company.040@example.com`) must not use Interest / Match mutating routes (`403 PENDING_VERIFICATION`).
+
+## Quality gates
+
+```bash
+# Backend
+cd kupc-backend
+npm run test:phase7
+npm run test:phase6   # still green
+
+# Frontend
+cd frontend
+npm run typecheck
+```
+
+OpenAPI: `http://localhost:5000/api/docs` — Swipes + Matches tags.
+
+---
+
+# Remaining Work After Phase 7
+
+Phase 7 **milestones are complete**. Items below are intentionally out of scope or deferred to Phase 8+.
+
+## Backend — deferred
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| `GET /swipes/me` history | Stub / optional | May still return `501`; not required for Discover MVP |
+| Match notifications | Deferred | `notificationsRepository` exists; not wired on match create |
+| Conversation create on match | Deferred | Phase 8 owns `conversations` / `messages` |
+| Undo beyond 30s / soft-delete | Out of scope | Hard delete within TTL only |
+
+## Frontend — deferred
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Chat UI | **Mock** | Phase 8 |
+| Discover Undo button | Not built | B3 API ready if product wants it |
+| Student swipe history screen | Not built | Would use `GET /swipes/me` |
+| Applicant kanban | **Mock** | Not Phase 7 (Interest replaced that nav slot’s purpose) |
+| Company/student dashboard stats | **Mock** | Hard-coded StatCards |
+| Admin approval / analytics | **Mock** | Separate workstream |
+| Discover filters on mobile | Partial | Filter aside still `md:block` |
+
+## What Phase 7 intentionally delivered
+
+- Students: durable Like/Nope; feed excludes swiped jobs  
+- Companies: Interest inbox + Match  
+- Both: live Matches list with nested counterparty + job  
+- APIs + Swagger + `test:phase7`  
+- Right ≠ match until company reciprocates  
+
+---
+
+# Mini Progress Report (Phase 7 Close-Out)
+
+**Date:** 2026-07-18  
+**Verdict:** Phase 7 **complete** for planned milestones (B1–B6, F1–F5). Ready for Phase 8 — Chat & Conversations.
+
+### Shipped (backend)
+
+| Milestone | Deliverable |
+| --- | --- |
+| B1 | `swipes` + `matches` modules; routes mounted; auth gates |
+| B2 | `POST /swipes`; student feed `excludeJobIds` |
+| B3 | `DELETE /swipes/:jobId` within 30s; refuse if match exists |
+| B4 | `GET /swipes/inbound`; idempotent `POST /matches` |
+| B5 | `GET /matches/me` nested cards |
+| B6 | Swagger + matrix/swagger tests |
+
+### Shipped (frontend)
+
+| Milestone | Deliverable |
+| --- | --- |
+| F1 | `swipesApi` / `matchesApi` + error messages |
+| F2 | Live Discover swipe persistence |
+| F3 | Interest inbox + Match |
+| F4 | Live Matches page |
+| F5 | Docs, smoke script, refresh polish |
+
+### Progress snapshot
+
+| Area | Before Phase 7 | After Phase 7 |
+| --- | --- | --- |
+| Discover Like/Nope | Local deck only | Persisted swipes |
+| Company reciprocation | None | Interest + Match |
+| Matches screen | Fake companies | Live `GET /matches/me` |
+| Chat | Mock | Still mock (Phase 8) |
+
+**Next phase:** Phase 8 — open conversation threads per match; wire Chat UI; do not invent ad-hoc chat outside match-scoped conversations.

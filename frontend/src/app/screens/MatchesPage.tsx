@@ -83,13 +83,22 @@ export function MatchesPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-6">
-      <div>
-        <h1 className="text-2xl font-bold text-[#111827]">Your Matches</h1>
-        <p className="mt-0.5 text-sm text-[#6B7280]">
-          {isCompany
-            ? 'Students you reciprocated after they liked a job. Messaging arrives in Phase 8.'
-            : 'Companies that matched after you liked a role. Messaging arrives in Phase 8.'}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-[#111827]">Your Matches</h1>
+          <p className="mt-0.5 text-sm text-[#6B7280]">
+            {isCompany
+              ? 'Students you reciprocated after they liked a job. Messaging arrives in Phase 8.'
+              : 'Companies that matched after you liked a role. Messaging arrives in Phase 8.'}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void load()}
+          className="rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm font-semibold text-[#6B7280] hover:border-[#2563EB] hover:text-[#2563EB]"
+        >
+          Refresh
+        </button>
       </div>
 
       {error && <ErrorBanner message={error} onDismiss={() => setError('')} />}

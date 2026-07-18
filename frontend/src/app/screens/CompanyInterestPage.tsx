@@ -102,13 +102,22 @@ export function CompanyInterestPage() {
             Students who liked your jobs. Match to open a connection (chat comes in a later phase).
           </p>
         </div>
-        <Link
-          to="/app/matches"
-          className="inline-flex items-center gap-1.5 rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm font-semibold text-[#374151] hover:border-[#2563EB] hover:text-[#2563EB]"
-        >
-          <Heart size={14} />
-          View matches
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm font-semibold text-[#6B7280] hover:border-[#2563EB] hover:text-[#2563EB]"
+          >
+            Refresh
+          </button>
+          <Link
+            to="/app/matches"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#E5E7EB] px-3 py-2 text-sm font-semibold text-[#374151] hover:border-[#2563EB] hover:text-[#2563EB]"
+          >
+            <Heart size={14} />
+            View matches
+          </Link>
+        </div>
       </div>
 
       {error && <ErrorBanner message={error} onDismiss={() => setError('')} />}

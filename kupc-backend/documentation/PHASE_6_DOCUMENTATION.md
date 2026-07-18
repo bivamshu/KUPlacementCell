@@ -676,25 +676,25 @@ Phase 6 **milestones are complete**, but the product is not “finished.” The 
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Swipe write APIs | **Not started** | `swipes` table + repository exist; no `POST /swipes` module yet (Phase 7) |
-| Match create/list APIs | **Not started** | `matches` repository ready; no HTTP surface for reciprocation / `GET /matches/me` (Phase 7) |
-| Feed excludes swiped jobs | **Not started** | `listOpenForFeed(excludeJobIds)` exists but Discover feed does not pass student swipe IDs yet |
-| Undo swipe | **Deferred** | Optional Phase 7 B3 |
+| Swipe write APIs | **Done (Phase 7)** | See `PHASE_7_DOCUMENTATION.md` |
+| Match create/list APIs | **Done (Phase 7)** | Interest + Matches UI live |
+| Feed excludes swiped jobs | **Done (Phase 7)** | Student `GET /jobs` + Discover |
+| Undo swipe | **Done (API)** | B3 `DELETE /swipes/:jobId`; no Discover Undo button |
 | Conversations / messages APIs | **Later** | Phase 8+ chat |
-| Notifications on match | **Later** | Optional Phase 7 insert; full notification UX later |
-| Express 5 query validation | **Fixed (hotfix)** | `validate` middleware must `defineProperty` on `req.query` (not `Object.assign`) — required for empty Discover feed; keep this pattern in Phase 7 |
-| Job moderation / admin job tools | **Out of scope** | Not planned for Phase 7 |
-| Semantic / vector ranking | **Out of scope** | Spec explicitly deferred |
+| Notifications on match | **Later** | Optional; not wired in Phase 7 |
+| Express 5 query validation | **Fixed (hotfix)** | Keep `defineProperty` pattern |
+| Job moderation / admin job tools | **Out of scope** | — |
+| Semantic / vector ranking | **Out of scope** | Spec deferred |
 
 ## Frontend — remaining / deferred
 
 | Area | Status | Notes |
 | --- | --- | --- |
-| Discover swipe persistence | **Mock** | Like/Nope/drag only advance local deck (`// MOCK: Phase 7`) |
-| Matches page | **Mock** | Still prototype `MATCHES` data |
+| Discover swipe persistence | **Live (Phase 7)** | `swipesApi.create` |
+| Matches page | **Live (Phase 7)** | `matchesApi.listMine` |
+| Company interest / reciprocate UI | **Live (Phase 7)** | `/app/applicants` Interest |
 | Chat | **Mock** | Phase 8+ |
-| Company interest / reciprocate UI | **Missing** | No inbound right-swipe inbox yet (Phase 7 F3) |
-| Applicant kanban | **Mock** | Not Phase 7 |
+| Applicant kanban | **Mock** | Nav slot reused for Interest |
 | Admin company approval / analytics | **Mock** | Separate admin phase |
 | Company dashboard stats | **Mock** | Stat cards still hard-coded |
 | Discover mobile filters | **Partial** | Filter panel hidden on small screens (`md:block`) — polish backlog |
@@ -712,7 +712,7 @@ Phase 6 **milestones are complete**, but the product is not “finished.” The 
 # Mini Progress Report (Phase 6 Close-Out)
 
 **Date:** 2026-07-18  
-**Verdict:** Phase 6 **complete** for planned milestones (B1–B5, F1–F6). Ready to start Phase 7 — Swipe Engine (`KUPC_Phase7_Specification.pdf`).
+**Verdict:** Phase 6 **complete** for planned milestones (B1–B5, F1–F6). Phase 7 (Swipe Engine) has since shipped — see `PHASE_7_DOCUMENTATION.md`.
 
 ### Shipped (backend)
 

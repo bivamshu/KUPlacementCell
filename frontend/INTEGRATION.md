@@ -1,7 +1,7 @@
 # KUPC Frontend ↔ Backend Integration
 
 **Last updated:** 2026-07-18  
-**Frontend phases:** A–E complete; Phase 6 jobs UI (F1–F6) complete; Phase 7 F1–F4 complete (F5 pending)  
+**Frontend phases:** A–E complete; Phase 6 jobs UI complete; **Phase 7 swipes/matches complete** (F1–F5)
 
 ## How to run the full stack
 
@@ -18,7 +18,7 @@ cd kupc-backend
 npm run db:migrate     # first time only; includes avatar/logo buckets
 npm run dev
 
-# Terminal 2 — resume analysis worker (required for F7)
+# Terminal 2 — resume analysis worker (required for resume analysis)
 cd kupc-backend
 npm run worker:resumes
 # Needs REDIS_URL + OPENAI_API_KEY
@@ -32,7 +32,7 @@ npm run dev
 
 - Frontend: `http://localhost:5173`
 - API: `http://localhost:5000/api/v1`
-- Docs: `http://localhost:5000/api/docs`
+- Docs: `http://localhost:5000/api/docs` (includes Swipes + Matches)
 - CORS: backend allows `http://localhost:5173` (no Vite proxy)
 
 ## Backend environment
@@ -66,15 +66,26 @@ Tokens are stored in `localStorage` as `kupc_access` / `kupc_refresh`.
 | Company profile (`/app/company-profile`) | **Live** — GET/PATCH/logo + verification badge |
 | Resume analyzer (`/app/resume`) | **Live** — upload, poll analysis, list, delete |
 | Settings sign-out | **Live** — clears tokens |
-| Discover (`/app/discover`) | **Live** — feed, filters, save/unsave, Like/Nope persist via `swipesApi` |
+| Discover (`/app/discover`) | **Live** — feed, filters, save/unsave, Like/Nope → `POST /swipes` |
 | Job detail (`/app/jobs/:id`) | **Live** — full description, save toggle, company card |
 | Public company (`/app/companies/:id`) | **Live** — approved company card from Phase 5 API |
 | Saved (`/app/saved`) | **Live** — `GET /jobs/saved` + unsave |
 | Job Post list (`/app/job-post`) | **Live** — list own jobs; publish / close / delete |
 | Job Post form (`/app/job-post/new`, `/app/job-post/:jobId`) | **Live** — create/edit draft + publish |
-| Interest (`/app/applicants`) | **Live** — inbound right-swipes + Match |
-| Matches (`/app/matches`) | **Live** — `GET /matches/me` (chat deferred to Phase 8) |
-| Chat / kanban / admin approval / analytics | **Mock** — Phase 8+ |
+| Interest (`/app/applicants`) | **Live** — inbound right-swipes + Match (`POST /matches`) |
+| Matches (`/app/matches`) | **Live** — `GET /matches/me` (Chat button disabled until Phase 8) |
+| Chat (`/app/chat`) | **Mock** — Phase 8 |
+| Applicant kanban / admin approval / analytics | **Mock** — later phases |
+| Dashboards (stat cards) | **Partial** — navigation live; metrics still prototype |
+
+## Phase 7 API clients (frontend)
+
+| Client | Methods |
+| --- | --- |
+| `swipesApi` | `create`, `undo`, `listInbound`, `listMine` |
+| `matchesApi` | `create`, `listMine` |
+
+Docs of record: [`../kupc-backend/documentation/PHASE_7_DOCUMENTATION.md`](../kupc-backend/documentation/PHASE_7_DOCUMENTATION.md).
 
 ## Seed demo accounts
 
@@ -88,7 +99,7 @@ Seed data is created with `npm run db:seed` in `kupc-backend` (~100 students, ~5
 | Company (approved) | `seed.company.001@example.com` | Companies `001`–`035` are approved |
 | Company (pending) | `seed.company.040@example.com` | Roughly `036`–`045` pending |
 
-After login as student → **Discover** / **Saved**. As approved company → **Job Posts** / **Interest**.
+After login as student → **Discover** / **Saved** / **Matches**. As approved company → **Job Posts** / **Interest** / **Matches**.
 
 ## Auth flow
 
@@ -105,8 +116,14 @@ After login as student → **Discover** / **Saved**. As approved company → **J
   `kupc-backend/.env` (Supabase → Settings → Database → Connection string → URI).
 - **Login returns 500 / Supabase errors** — `SUPABASE_URL` / keys are empty or wrong in
   `kupc-backend/.env`.
+- **Interest empty after student Like** — confirm the job’s company is **approved** and the
+  company account owns that job; pending companies cannot open Interest.
+- **Swiped job still on Discover after refresh** — confirm API is Phase 7 B2+ and student JWT
+  is used for `GET /jobs` (feed exclusion is student-only).
 
 ## Manual smoke checklist
+
+### Auth & profiles
 
 - [ ] Student register → OTP → dashboard
 - [ ] Wrong password shows error (no silent fail)
@@ -116,5 +133,18 @@ After login as student → **Discover** / **Saved**. As approved company → **J
 - [ ] Profile edit + reload persists
 - [ ] Avatar / logo upload updates image
 - [ ] PDF resume upload → pending → completed (worker running)
+
+### Jobs (Phase 6)
+
 - [ ] Discover shows seeded open jobs (student seed account)
 - [ ] Job Posts lists seeded roles (approved company seed account)
+- [ ] Save / unsave and Saved page sync
+
+### Swipes & matches (Phase 7)
+
+- [ ] Student Like on Discover → refresh → job gone from deck
+- [ ] Company Interest shows that student on the liked job
+- [ ] Company Match → both sides see the match on Matches
+- [ ] Matches job link opens detail (student) or job-post (company)
+- [ ] Chat control on Matches stays disabled
+- [ ] Pending company cannot Match / open Interest (`PENDING_VERIFICATION`)
