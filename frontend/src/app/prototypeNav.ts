@@ -55,7 +55,7 @@ export const COMPANY_NAV: NavItem[] = [
   { id: 'matches', label: 'Matches', icon: Heart },
   { id: 'chat', label: 'Chats', icon: MessageSquare },
   { id: 'job-post', label: 'Job Posts', icon: Briefcase },
-  { id: 'applicants', label: 'Applicants', icon: Users },
+  { id: 'applicants', label: 'Interest', icon: Users },
   { id: 'company-profile', label: 'Company Profile', icon: Building2 },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];

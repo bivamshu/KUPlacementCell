@@ -18,10 +18,10 @@ import { CompanyJobsPage } from './screens/CompanyJobsPage';
 import { SavedJobsPage } from './screens/SavedJobsPage';
 import { JobDetailPage } from './screens/JobDetailPage';
 import { CompanyPublicPage } from './screens/CompanyPublicPage';
+import { CompanyInterestPage } from './screens/CompanyInterestPage';
 import {
   AdminAnalytics,
   AdminOverview,
-  ApplicantKanban,
   ChatPage,
   CompanyApproval,
   CompanyDashboard,
@@ -234,7 +234,7 @@ export default function App() {
             path="applicants"
             element={
               <RoleGate screen="applicants">
-                <ApplicantKanban />
+                <CompanyInterestPage />
               </RoleGate>
             }
           />

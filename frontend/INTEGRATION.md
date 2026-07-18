@@ -1,7 +1,7 @@
 # KUPC Frontend ↔ Backend Integration
 
 **Last updated:** 2026-07-18  
-**Frontend phases:** A–E complete; Phase 6 jobs UI (F1–F6) complete; Phase 7 F1–F2 complete (F3–F5 pending)  
+**Frontend phases:** A–E complete; Phase 6 jobs UI (F1–F6) complete; Phase 7 F1–F3 complete (F4–F5 pending)  
 
 ## How to run the full stack
 
@@ -72,7 +72,8 @@ Tokens are stored in `localStorage` as `kupc_access` / `kupc_refresh`.
 | Saved (`/app/saved`) | **Live** — `GET /jobs/saved` + unsave |
 | Job Post list (`/app/job-post`) | **Live** — list own jobs; publish / close / delete |
 | Job Post form (`/app/job-post/new`, `/app/job-post/:jobId`) | **Live** — create/edit draft + publish |
-| Matches / chat / kanban / admin approval / analytics | **Mock** — Phase 7 F3–F5 + Phase 8 |
+| Interest (`/app/applicants`) | **Live** — inbound right-swipes + Match |
+| Matches / chat / kanban / admin approval / analytics | **Mock** — Phase 7 F4–F5 + Phase 8 |
 
 ## Seed demo accounts
 
@@ -86,7 +87,7 @@ Seed data is created with `npm run db:seed` in `kupc-backend` (~100 students, ~5
 | Company (approved) | `seed.company.001@example.com` | Companies `001`–`035` are approved |
 | Company (pending) | `seed.company.040@example.com` | Roughly `036`–`045` pending |
 
-After login as student → **Discover** / **Saved**. As approved company → **Job Posts**.
+After login as student → **Discover** / **Saved**. As approved company → **Job Posts** / **Interest**.
 
 ## Auth flow
 

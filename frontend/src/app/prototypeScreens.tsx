@@ -472,6 +472,14 @@ export function CompanyDashboard({ onNavigate }: { onNavigate: (s: string) => vo
         >
           Post a job
         </button>
+        <button
+          type="button"
+          onClick={() => onNavigate('applicants')}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[#E5E7EB] px-4 py-2 text-sm font-semibold text-[#374151] hover:border-[#2563EB] hover:text-[#2563EB]"
+        >
+          <Users size={16} />
+          Student interest
+        </button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

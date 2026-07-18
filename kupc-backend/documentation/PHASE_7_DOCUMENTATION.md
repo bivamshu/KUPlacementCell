@@ -1,6 +1,6 @@
 # KUPC Phase 7 — Swipe Engine
 
-**Status:** B1–B6 complete; F1–F2 complete; F3–F5 pending  
+**Status:** B1–B6 complete; F1–F3 complete; F4–F5 pending  
 **Date:** 2026-07-18  
 **Depends on:** Phase 2 (Auth), Phase 3B (`swipes` / `matches` repos), Phase 6 (open jobs feed + Discover UI)  
 **References:** `KUPC_Phase7_Specification.pdf`  
@@ -16,7 +16,7 @@
 | B6 | Backend | Swagger, hardening & test matrix | **Complete** |
 | F1 | Frontend | swipesApi + matchesApi | **Complete** |
 | F2 | Frontend | Discover live swipe | **Complete** |
-| F3 | Frontend | Company interest inbox | Pending |
+| F3 | Frontend | Company interest inbox | **Complete** |
 | F4 | Frontend | Matches list live | Pending |
 | F5 | Frontend | Polish + docs | Pending |
 
@@ -527,3 +527,58 @@ Without persistence, Discover was a local carousel. F2 makes right/left durable 
 | Copy | No “swipe is local” / MOCK persistence comments |
 
 **What comes next:** Milestone F3 — company interest inbox (`GET /swipes/inbound` + Match action).
+
+---
+
+# Milestone F3 — Company Interest Inbox
+
+**Status:** Complete  
+**Depends on:** F1 clients, B4 inbound + match create  
+**Does not include:** Matches list live UI (F4), chat (Phase 8), applicant kanban
+
+## What it is
+
+Companies open **Interest** (`/app/applicants`) to see students who right-swiped their jobs and can **Match** via `POST /matches`. Already-matched rows are marked from `GET /matches/me`. Dashboard links to the inbox.
+
+## Why it happens now
+
+F2 persists student likes; without an inbox, companies cannot reciprocate. Matching unlocks the Matches screen (F4).
+
+## What was decided / locked
+
+| Rule | Behavior |
+| --- | --- |
+| Route | Reuse `/app/applicants` (nav label **Interest**); replace mock kanban |
+| Load | `swipesApi.listInbound` + `matchesApi.listMine` for matched keys |
+| Match | `matchesApi.create({ job_id, student_id })` → mark row Matched |
+| Conflict | `MATCH_CONFLICT` treated as already matched |
+| Empty | EmptyState → manage job posts |
+
+## Implementation steps (what was done)
+
+1. Added `CompanyInterestPage` with list + Match action.
+2. Wired route in `App.tsx`; renamed company nav item to Interest.
+3. Added Company Dashboard quick action “Student interest”.
+4. Updated INTEGRATION / README / Phase 7 docs.
+
+## Files touched
+
+| Path | Change |
+| --- | --- |
+| `frontend/src/app/screens/CompanyInterestPage.tsx` | **Created** |
+| `frontend/src/app/App.tsx` | Route → Interest page |
+| `frontend/src/app/prototypeNav.ts` | Label Interest |
+| `frontend/src/app/prototypeScreens.tsx` | Dashboard CTA |
+| `frontend/INTEGRATION.md` / `README.md` | Status |
+| `documentation/PHASE_7_DOCUMENTATION.md` | F3 section |
+
+## Milestone F3 exit checklist
+
+| Item | Done when |
+| --- | --- |
+| Inbox live | Shows student right-swipes on own jobs |
+| Match action | Creates match; row shows Matched |
+| Nav / dashboard | Reachable from sidebar + dashboard |
+| Types | `npm run typecheck` clean |
+
+**What comes next:** Milestone F4 — live Matches page via `matchesApi.listMine`.
