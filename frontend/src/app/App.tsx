@@ -19,6 +19,7 @@ import { SavedJobsPage } from './screens/SavedJobsPage';
 import { JobDetailPage } from './screens/JobDetailPage';
 import { CompanyPublicPage } from './screens/CompanyPublicPage';
 import { CompanyInterestPage } from './screens/CompanyInterestPage';
+import { MatchesPage } from './screens/MatchesPage';
 import {
   AdminAnalytics,
   AdminOverview,
@@ -26,7 +27,6 @@ import {
   CompanyApproval,
   CompanyDashboard,
   DiscoverStudents,
-  MatchesPage,
   NotificationsPage,
   SettingsPage,
   StudentDashboard,
@@ -51,11 +51,6 @@ function DashboardRoute() {
   if (user.role === 'STUDENT') return <StudentDashboard onNavigate={go} />;
   if (user.role === 'COMPANY') return <CompanyDashboard onNavigate={go} />;
   return <AdminOverview onNavigate={go} />;
-}
-
-function MatchesRoute() {
-  const navigate = useNavigate();
-  return <MatchesPage onNavigate={(s) => navigate(`/app/${s}`)} />;
 }
 
 function SettingsRoute() {
@@ -138,7 +133,7 @@ export default function App() {
             path="matches"
             element={
               <RoleGate screen="matches">
-                <MatchesRoute />
+                <MatchesPage />
               </RoleGate>
             }
           />

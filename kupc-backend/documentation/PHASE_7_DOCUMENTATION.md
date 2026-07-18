@@ -1,6 +1,6 @@
 # KUPC Phase 7 — Swipe Engine
 
-**Status:** B1–B6 complete; F1–F3 complete; F4–F5 pending  
+**Status:** B1–B6 complete; F1–F4 complete; F5 pending  
 **Date:** 2026-07-18  
 **Depends on:** Phase 2 (Auth), Phase 3B (`swipes` / `matches` repos), Phase 6 (open jobs feed + Discover UI)  
 **References:** `KUPC_Phase7_Specification.pdf`  
@@ -17,7 +17,8 @@
 | F1 | Frontend | swipesApi + matchesApi | **Complete** |
 | F2 | Frontend | Discover live swipe | **Complete** |
 | F3 | Frontend | Company interest inbox | **Complete** |
-| F4 | Frontend | Matches list live | Pending |
+| F4 | Frontend | Matches list live | **Complete** |
+| F5 | Frontend | Polish + docs | Pending |
 | F5 | Frontend | Polish + docs | Pending |
 
 ---
@@ -436,23 +437,51 @@ B6 documents every Phase 7 swipe/match endpoint in OpenAPI (`/api/docs`), locks 
 # Milestone F1 — swipesApi & matchesApi
 
 **Status:** Complete  
-**Depends on:** B1–B6 contracts (swipe/match API live on backend)  
-**Does not include:** Discover wiring (F2), company inbox UI (F3), Matches screen (F4)
+**Depends on:** Backend B1–B6 (all `/swipes` and `/matches` contracts live)  
+**Does not include:** Any screen wiring (F2–F4), undo UI, chat clients
 
 ## What it is
 
-F1 adds typed frontend clients matching the Phase 7 API contract so Discover, inbound, and Matches screens stay thin (same pattern as `jobsApi`).
+F1 is the frontend contract layer for Phase 7. It mirrors how Phase 6 shipped `jobsApi` before Job Post / Discover UI: typed DTOs, thin fetch wrappers, and user-facing error strings — so screens never invent JSON shapes or hard-code status codes.
 
-## Why it happens with B1–B6 done
+## Why it ships before UI
 
-Screens must not invent fetch shapes. Clients land now so F2–F4 only wire UI.
+Discover, Interest, and Matches all share the same wire format (`snake_case` bodies, envelope `{ success, data, error }`). Landing clients first means F2–F4 stay UI-only and can be reviewed against a single API surface.
+
+## API surface locked in F1
+
+### `swipesApi` (`frontend/src/lib/api/swipesApi.ts`)
+
+| Method | HTTP | Notes |
+| --- | --- | --- |
+| `create(body)` | `POST /swipes` | `{ job_id, direction: left\|right }` → `SwipeDto` |
+| `undo(jobId)` | `DELETE /swipes/:jobId` | Within 30s undo window (B3); unused by F2 UI |
+| `listInbound()` | `GET /swipes/inbound` | Verified company; `InboundSwipeDto[]` |
+| `listMine()` | `GET /swipes/me` | Optional history; backend may still `501` |
+
+### `matchesApi` (`frontend/src/lib/api/matchesApi.ts`)
+
+| Method | HTTP | Notes |
+| --- | --- | --- |
+| `create(body)` | `POST /matches` | `{ job_id, student_id }` → `MatchDto` (idempotent) |
+| `listMine()` | `GET /matches/me` | Role-aware nested job + counterparty |
+
+### Types (`types.ts`)
+
+- `SwipeDto`, `CreateSwipeBody`, `SwipeDirection`
+- `InboundSwipeDto`, `SwipeStudentSummary`, `SwipeUndoResult`
+- `MatchDto` (optional nested `job` / `student` / `company`), `CreateMatchBody`
+
+### Error strings (`errorMessages.ts`)
+
+Mapped for: `SWIPE_NOT_FOUND`, `SWIPE_CONFLICT`, `SWIPE_JOB_NOT_OPEN`, `SWIPE_UNDO_EXPIRED`, `INVALID_SWIPE_PAYLOAD`, `MATCH_NOT_FOUND`, `MATCH_FORBIDDEN`, `MATCH_CONFLICT`, `INVALID_MATCH_PAYLOAD`. `NOT_IMPLEMENTED` message generalized beyond jobs-only wording.
 
 ## Implementation steps (what was done)
 
-1. Extended `frontend/src/lib/api/types.ts` with swipe/match DTOs and request bodies.
-2. Created `swipesApi.ts` (`create`, `undo`, `listInbound`, `listMine`) and `matchesApi.ts` (`create`, `listMine`).
-3. Exported both from `lib/api/index.ts`.
-4. Mapped Phase 7 error codes in `errorMessages.ts`.
+1. Extended `frontend/src/lib/api/types.ts` with the Phase 7 DTOs above.
+2. Added `swipesApi.ts` and `matchesApi.ts` using shared `apiRequest`.
+3. Re-exported from `lib/api/index.ts`.
+4. Wired error codes into `messageFromError`.
 
 ## Files touched
 
@@ -463,51 +492,56 @@ Screens must not invent fetch shapes. Clients land now so F2–F4 only wire UI.
 | `frontend/src/lib/api/matchesApi.ts` | **Created** |
 | `frontend/src/lib/api/index.ts` | Export clients |
 | `frontend/src/lib/api/errorMessages.ts` | Phase 7 codes |
-| `frontend/INTEGRATION.md` / `README.md` | Status notes |
 | `documentation/PHASE_7_DOCUMENTATION.md` | F1 section |
 
 ## Milestone F1 exit checklist
 
 | Item | Done when |
 | --- | --- |
-| Clients export | `swipesApi` / `matchesApi` importable from `lib/api` |
+| Clients export | `import { swipesApi, matchesApi } from '…/lib/api'` works |
 | Types compile | `npm run typecheck` clean |
-| Errors mapped | User-facing strings for swipe/match codes |
+| Errors mapped | Swipe/match codes resolve to readable strings |
 
-**What comes next:** Milestone F2 — wire Discover Like/Nope to `swipesApi.create`.
+**What comes next:** F2 — Discover calls `swipesApi.create` on Like/Nope/drag.
 
 ---
 
 # Milestone F2 — Discover Live Swipe
 
 **Status:** Complete  
-**Depends on:** F1 `swipesApi`, B2 feed exclusion  
-**Does not include:** Undo UI (optional), company inbox (F3), Matches screen (F4)
+**Depends on:** F1 `swipesApi`, backend B2 (persist + student feed `excludeJobIds`)  
+**Does not include:** Undo button (B3 API exists; no Discover UI), company inbox (F3), Matches (F4)
 
 ## What it is
 
-Discover Like / Nope / drag-end call `POST /swipes`. Success (or `SWIPE_CONFLICT`) advances the deck and removes the card locally. Backend feed exclusion means a refresh does not re-show swiped jobs. Failures surface via `ErrorBanner`.
+F2 turns Discover from a local card carousel into a durable decision stream. Every Like (right), Nope (left), or drag-past-threshold calls `POST /swipes`. The backend stores the row and excludes that job from future `GET /jobs` feeds for that student.
 
-## Why it happens now
+## Product rules enforced in the UI
 
-Without persistence, Discover was a local carousel. F2 makes right/left durable so company inbound (F3) and matches (F4) have real data.
-
-## What was decided / locked
-
-| Rule | Behavior |
+| Rule | UI behavior |
 | --- | --- |
-| Persist | `swipesApi.create({ job_id, direction })` before animate-out |
-| Conflict | `SWIPE_CONFLICT` → treat as already done; still remove card |
-| Other errors | Keep card; `ErrorBanner` + reset drag |
-| Local deck | Filter swiped id out of `jobs` (no “restart” of already-swiped cards) |
-| In-flight | Disable buttons / drag while request pending |
+| Persist before animate | Await `swipesApi.create`, then animate card out |
+| Duplicate swipe | `409 SWIPE_CONFLICT` → still remove card (already decided) |
+| Other failures | Keep card visible; `ErrorBanner`; reset drag offset |
+| No double-submit | `swiping` / `swipingRef` disables buttons and drag |
+| Deck hygiene | Remove swiped id from local `jobs[]` (not mere index++) so “restart” cannot resurrect them |
+| Empty after swipe-through | `deckExhausted` → “You’re caught up” (vs never-had-jobs empty feed) |
+| Refresh | `jobsApi.listFeed` returns only unswiped openings (server-side exclusion) |
+
+Right-swipe alone still **does not** create a match — companies reciprocate in F3.
 
 ## Implementation steps (what was done)
 
-1. Replaced local-only `advance` with `recordSwipe` on Discover.
-2. Wired drag end + Like/Nope buttons; removed `// MOCK: Phase 7` persistence comments.
-3. Updated empty state for deck-exhausted vs truly empty feed.
-4. Updated INTEGRATION / README status notes.
+1. Replaced local-only `advance` with `recordSwipe` / `finishSwipe` in `DiscoverPage.tsx`.
+2. Wired drag-end thresholds (±80px) and Like/Nope buttons to `recordSwipe`.
+3. Removed `// MOCK: Phase 7` persistence comments and “swipe is local” copy.
+4. Distinguished empty feed vs deck-exhausted empty states.
+
+## Manual smoke (seed)
+
+1. Student `seed.student.001@ku.edu.np` → Discover → Like a few jobs.
+2. Refresh Discover → those jobs must not reappear.
+3. Force duplicate (if possible) → deck still advances without a blocking error.
 
 ## Files touched
 
@@ -521,64 +555,136 @@ Without persistence, Discover was a local carousel. F2 makes right/left durable 
 
 | Item | Done when |
 | --- | --- |
-| Persist | Reload does not re-show swiped job |
-| Errors | ErrorBanner on non-conflict failure |
-| Conflict | Duplicate swipe skips card without blocking |
-| Copy | No “swipe is local” / MOCK persistence comments |
+| Persist | Reload does not re-show a swiped job |
+| Errors | Non-conflict failures show ErrorBanner |
+| Conflict | Duplicate treated as skip |
+| Copy | No “local only” / MOCK persistence comments |
 
-**What comes next:** Milestone F3 — company interest inbox (`GET /swipes/inbound` + Match action).
+**What comes next:** F3 — company Interest inbox + Match.
 
 ---
 
 # Milestone F3 — Company Interest Inbox
 
 **Status:** Complete  
-**Depends on:** F1 clients, B4 inbound + match create  
-**Does not include:** Matches list live UI (F4), chat (Phase 8), applicant kanban
+**Depends on:** F1 clients, F2 right-swipes in DB, backend B4 (`GET /swipes/inbound`, `POST /matches`)  
+**Does not include:** Live Matches grid (F4), chat threads (Phase 8), old applicant kanban
 
 ## What it is
 
-Companies open **Interest** (`/app/applicants`) to see students who right-swiped their jobs and can **Match** via `POST /matches`. Already-matched rows are marked from `GET /matches/me`. Dashboard links to the inbox.
+F3 gives verified companies a place to see **who liked which job** and to **reciprocate**. The screen reuses the existing `/app/applicants` route (sidebar label **Interest**) so nav/role maps stay stable while replacing the mock kanban.
 
-## Why it happens now
+## Screen behavior
 
-F2 persists student likes; without an inbox, companies cannot reciprocate. Matching unlocks the Matches screen (F4).
-
-## What was decided / locked
-
-| Rule | Behavior |
+| Concern | Behavior |
 | --- | --- |
-| Route | Reuse `/app/applicants` (nav label **Interest**); replace mock kanban |
-| Load | `swipesApi.listInbound` + `matchesApi.listMine` for matched keys |
-| Match | `matchesApi.create({ job_id, student_id })` → mark row Matched |
-| Conflict | `MATCH_CONFLICT` treated as already matched |
-| Empty | EmptyState → manage job posts |
+| Load | Parallel `swipesApi.listInbound()` + `matchesApi.listMine()` |
+| Matched keys | `job_id:student_id` set from existing matches so refresh shows **Matched** |
+| Match action | `matchesApi.create({ job_id, student_id })` → add key to set |
+| Idempotent / conflict | Create already returns existing match; `MATCH_CONFLICT` also marks Matched |
+| Empty | CTA to Job Posts |
+| Pending company | Middleware `PENDING_VERIFICATION` → ErrorBanner (same as other company writes) |
+| Dashboard | Quick action “Student interest” → `/app/applicants` |
+
+Inbound cards show student summary (name, avatar, department/year), job title/status, and swipe time.
 
 ## Implementation steps (what was done)
 
-1. Added `CompanyInterestPage` with list + Match action.
-2. Wired route in `App.tsx`; renamed company nav item to Interest.
-3. Added Company Dashboard quick action “Student interest”.
-4. Updated INTEGRATION / README / Phase 7 docs.
+1. Created `CompanyInterestPage.tsx`.
+2. Pointed `App.tsx` `applicants` route at the live page; nav label → Interest.
+3. Added Company Dashboard CTA.
+4. Documented in INTEGRATION / README / Phase 7.
+
+## Manual smoke (seed)
+
+1. Student right-swipes an **open** job from an **approved** company.
+2. Company `seed.company.001@example.com` → Interest → student row appears.
+3. Click **Match** → badge **Matched**; student/company both see it after F4 on Matches.
 
 ## Files touched
 
 | Path | Change |
 | --- | --- |
 | `frontend/src/app/screens/CompanyInterestPage.tsx` | **Created** |
-| `frontend/src/app/App.tsx` | Route → Interest page |
+| `frontend/src/app/App.tsx` | Route swap |
 | `frontend/src/app/prototypeNav.ts` | Label Interest |
 | `frontend/src/app/prototypeScreens.tsx` | Dashboard CTA |
-| `frontend/INTEGRATION.md` / `README.md` | Status |
 | `documentation/PHASE_7_DOCUMENTATION.md` | F3 section |
 
 ## Milestone F3 exit checklist
 
 | Item | Done when |
 | --- | --- |
-| Inbox live | Shows student right-swipes on own jobs |
-| Match action | Creates match; row shows Matched |
-| Nav / dashboard | Reachable from sidebar + dashboard |
+| Inbox live | Right-swipes on own jobs listed |
+| Match action | Creates match; UI shows Matched |
+| Navigation | Sidebar + dashboard reach the page |
 | Types | `npm run typecheck` clean |
 
-**What comes next:** Milestone F4 — live Matches page via `matchesApi.listMine`.
+**What comes next:** F4 — Matches page reads `matchesApi.listMine`.
+
+---
+
+# Milestone F4 — Matches List Live
+
+**Status:** Complete  
+**Depends on:** F1 `matchesApi`, F3 match creation (or seed matches), backend B5 nested `GET /matches/me`  
+**Does not include:** Chat / conversations (Phase 8), match filters, notifications
+
+## What it is
+
+F4 replaces the prototype `MatchesPage` hardcoded `MATCHES` grid with a live list from `GET /matches/me`. Students see the **company** counterparty + job; companies see the **student** counterparty + job. Chat remains explicitly disabled until Phase 8.
+
+## Why it happens now
+
+After F3, matches exist in the database but both sides still saw fake Leapfrog/Fusemachines cards. F4 closes the loop: swipe → match → shared Matches screen.
+
+## UI / data rules
+
+| Rule | Behavior |
+| --- | --- |
+| Data source | Only `matchesApi.listMine()` — no hardcoded match arrays for this screen |
+| Student card | Company name + logo (or initials), job title, matched date |
+| Company card | Student name + avatar (or initials), job title, matched date |
+| Job link | Student → `/app/jobs/:jobId`; Company → `/app/job-post/:jobId` |
+| Chat | Disabled button labeled **Chat (Phase 8)** (tooltip explains) |
+| Empty (student) | CTA → Discover |
+| Empty (company) | CTA → Interest inbox |
+| Errors | ErrorBanner + empty list |
+| Mock cleanup | Prototype `MatchesPage` removed; `MATCHES` constant kept only for ChatPage demo |
+
+## Implementation steps (what was done)
+
+1. Added `frontend/src/app/screens/MatchesPage.tsx` with role-aware cards.
+2. Wired `/app/matches` in `App.tsx` to the live page (dropped `MatchesRoute` wrapper).
+3. Removed exported mock `MatchesPage` from `prototypeScreens.tsx`.
+4. Expanded Phase 7 frontend documentation (F1–F4 detail) and status tables.
+
+## Manual smoke (end-to-end)
+
+1. Student likes a job (F2).
+2. Company Matches from Interest (F3).
+3. Both accounts open **Matches** → same connection appears with correct counterparty.
+4. Job link opens the right manage/detail route per role.
+5. Chat control stays disabled.
+
+## Files touched
+
+| Path | Change |
+| --- | --- |
+| `frontend/src/app/screens/MatchesPage.tsx` | **Created** (live) |
+| `frontend/src/app/App.tsx` | Route → live MatchesPage |
+| `frontend/src/app/prototypeScreens.tsx` | Removed mock MatchesPage |
+| `frontend/INTEGRATION.md` / `README.md` | Status |
+| `documentation/PHASE_7_DOCUMENTATION.md` | Detailed F1–F4 |
+
+## Milestone F4 exit checklist
+
+| Item | Done when |
+| --- | --- |
+| List live | Real matches from API for student and company |
+| Mock removed | Matches screen does not use hardcoded MATCHES data |
+| Empty / errors | EmptyState + ErrorBanner behave correctly |
+| Chat deferred | Button disabled with Phase 8 label |
+| Types | `npm run typecheck` clean |
+
+**What comes next:** Milestone F5 — polish, INTEGRATION close-out, and whole-phase smoke notes.

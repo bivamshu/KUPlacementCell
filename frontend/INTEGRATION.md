@@ -1,7 +1,7 @@
 # KUPC Frontend ↔ Backend Integration
 
 **Last updated:** 2026-07-18  
-**Frontend phases:** A–E complete; Phase 6 jobs UI (F1–F6) complete; Phase 7 F1–F3 complete (F4–F5 pending)  
+**Frontend phases:** A–E complete; Phase 6 jobs UI (F1–F6) complete; Phase 7 F1–F4 complete (F5 pending)  
 
 ## How to run the full stack
 
@@ -73,7 +73,8 @@ Tokens are stored in `localStorage` as `kupc_access` / `kupc_refresh`.
 | Job Post list (`/app/job-post`) | **Live** — list own jobs; publish / close / delete |
 | Job Post form (`/app/job-post/new`, `/app/job-post/:jobId`) | **Live** — create/edit draft + publish |
 | Interest (`/app/applicants`) | **Live** — inbound right-swipes + Match |
-| Matches / chat / kanban / admin approval / analytics | **Mock** — Phase 7 F4–F5 + Phase 8 |
+| Matches (`/app/matches`) | **Live** — `GET /matches/me` (chat deferred to Phase 8) |
+| Chat / kanban / admin approval / analytics | **Mock** — Phase 8+ |
 
 ## Seed demo accounts
 

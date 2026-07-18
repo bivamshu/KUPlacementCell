@@ -308,53 +308,9 @@ export function StudentDashboard({ onNavigate }: { onNavigate: (s: Screen) => vo
   );
 }
 
-// Discover live screen: src/app/screens/DiscoverPage.tsx (Phase 6 F4)
-
-export function MatchesPage({ onNavigate }: { onNavigate: (s: Screen) => void }) {
-  return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-[#111827]">Your Matches</h1>
-          <p className="text-[#6B7280] text-sm mt-0.5">12 companies have matched with you</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1.5 text-sm text-[#6B7280] border border-[#E5E7EB] px-3 py-1.5 rounded-lg hover:border-[#2563EB] hover:text-[#2563EB] transition-colors">
-            <Filter size={14} /> Filter
-          </button>
-        </div>
-      </div>
-
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {[...MATCHES, ...MATCHES.slice(0, 2)].map((m, i) => (
-          <div key={i} className="bg-white rounded-2xl border border-[#E5E7EB] p-5 hover:shadow-md transition-all group cursor-pointer">
-            <div className="flex items-start justify-between mb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-bold" style={{ background: m.color }}>{m.logo}</div>
-                <div>
-                  <p className="font-semibold text-[#111827]">{m.name}</p>
-                  <p className="text-xs text-[#6B7280]">{m.role}</p>
-                </div>
-              </div>
-              {m.unread > 0 && (
-                <div className="w-5 h-5 rounded-full bg-[#2563EB] flex items-center justify-center">
-                  <span className="text-white text-[10px] font-bold">{m.unread}</span>
-                </div>
-              )}
-            </div>
-            <p className="text-xs text-[#9CA3AF] truncate mb-4">{m.lastMsg}</p>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-[#9CA3AF]">Matched {m.matchDate}</span>
-              <button onClick={() => onNavigate("chat")} className="flex items-center gap-1.5 text-xs font-medium text-[#2563EB] hover:underline">
-                Open Chat <MessageSquare size={12} />
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+// Discover live: src/app/screens/DiscoverPage.tsx
+// Matches live: src/app/screens/MatchesPage.tsx (Phase 7 F4)
+// MATCHES mock retained only for ChatPage prototype (Phase 8)
 
 export function ChatPage() {
   const [active, setActive] = useState(0);
