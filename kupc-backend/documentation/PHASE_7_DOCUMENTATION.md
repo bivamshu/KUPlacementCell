@@ -1,6 +1,6 @@
 # KUPC Phase 7 — Swipe Engine
 
-**Status:** B1–B5 complete; B6 / F1–F5 pending  
+**Status:** B1–B6 complete; F1–F5 pending  
 **Date:** 2026-07-18  
 **Depends on:** Phase 2 (Auth), Phase 3B (`swipes` / `matches` repos), Phase 6 (open jobs feed + Discover UI)  
 **References:** `KUPC_Phase7_Specification.pdf`  
@@ -13,7 +13,7 @@
 | B3 | Backend | Undo window (optional) | **Complete** |
 | B4 | Backend | Company interest + match create | **Complete** |
 | B5 | Backend | Matches read APIs | **Complete** |
-| B6 | Backend | Swagger, hardening & test matrix | Pending |
+| B6 | Backend | Swagger, hardening & test matrix | **Complete** |
 | F1 | Frontend | swipesApi + matchesApi | Pending |
 | F2 | Frontend | Discover live swipe | Pending |
 | F3 | Frontend | Company interest inbox | Pending |
@@ -380,3 +380,53 @@ Still stubbed: `GET /swipes/me` (`501`).
 | Tests | `phase7.matches` list cases + `npm run test:phase7` green |
 
 **What comes next:** Milestone B6 — Swagger + hardening & test matrix (or start F1 API clients in parallel).
+
+---
+
+# Milestone B6 — Swagger, Hardening & Test Matrix
+
+**Status:** Complete  
+**Depends on:** B1–B5  
+**Does not include:** Frontend screens (F1–F5), chat (Phase 8)
+
+## What it is
+
+B6 documents every Phase 7 swipe/match endpoint in OpenAPI (`/api/docs`), locks hardening checks (route order, Express 5 `defineProperty` validation, right ≠ match, feed exclusion), and ships matrix + swagger suites so `npm run test:phase7` is the single backend gate for this phase.
+
+## What was decided / locked
+
+| Check | Evidence |
+| --- | --- |
+| OpenAPI | `Swipe`, `CreateSwipe`, `InboundSwipe`, `Match`, `CreateMatch`, all `/swipes*` + `/matches*` paths |
+| Right ≠ match | `CreateSwipe` description; swipe create never calls `matchesRepository.create` |
+| Route order | `/me`, `/inbound` before `/:jobId` |
+| Express 5 validate | `defineProperty` for query/params (no `Object.assign`) |
+| Feed exclusion | `jobs.service` + `listOpenFiltered({ excludeJobIds })` |
+| Undo policy | TTL + refuse when match exists |
+
+## Implementation steps (what was done)
+
+1. Extended `src/config/swagger.ts` with swipe/match schemas and §4 paths; updated info description for Phase 7.
+2. Added `phase7.swagger.test.ts` and `phase7.matrix.test.ts`.
+3. Confirmed `npm run test:phase7` green with `--forceExit`.
+4. Updated this documentation file to mark B6 complete.
+
+## Files touched
+
+| Path | Change |
+| --- | --- |
+| `src/config/swagger.ts` | Swipe/match schemas + paths; info description |
+| `src/__tests__/phase7.swagger.test.ts` | **Created** |
+| `src/__tests__/phase7.matrix.test.ts` | **Created** |
+| `documentation/PHASE_7_DOCUMENTATION.md` | B6 section |
+
+## Milestone B6 exit checklist
+
+| Item | Done when |
+| --- | --- |
+| OpenAPI | All Phase 7 paths at `/api/docs` |
+| test:phase7 | Full suite green |
+| Hardening | Matrix asserts route order / validate / feed exclusion |
+| Docs | PHASE_7_DOCUMENTATION.md covers B1–B6 |
+
+**What comes next:** Frontend F1–F5 (`swipesApi` / `matchesApi`, Discover live swipe, company inbox, Matches list, polish).

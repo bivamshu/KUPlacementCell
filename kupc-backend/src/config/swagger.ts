@@ -7,7 +7,7 @@ const swaggerDefinition = {
     title: 'KUPC API',
     version: config.api.version,
     description:
-      'OpenAPI documentation for KUPC backend — Phase 2 auth, Phase 4 resumes, Phase 5 profiles, Phase 6 job posting and discovery.'
+      'OpenAPI documentation for KUPC backend — Phase 2 auth, Phase 4 resumes, Phase 5 profiles, Phase 6 jobs, Phase 7 swipes & matches.'
   },
   servers: [
     {
@@ -236,6 +236,101 @@ const swaggerDefinition = {
         type: 'object',
         properties: {
           saved: { type: 'boolean' }
+        }
+      },
+      Swipe: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          student_id: { type: 'string', format: 'uuid' },
+          company_id: { type: 'string', format: 'uuid' },
+          job_id: { type: 'string', format: 'uuid' },
+          direction: { type: 'string', enum: ['left', 'right'] },
+          swiped_at: { type: 'string', format: 'date-time' }
+        }
+      },
+      CreateSwipe: {
+        type: 'object',
+        required: ['job_id', 'direction'],
+        description: 'company_id is resolved server-side from the job. Right-swipe alone does not create a match.',
+        properties: {
+          job_id: { type: 'string', format: 'uuid' },
+          direction: { type: 'string', enum: ['left', 'right'] }
+        }
+      },
+      SwipeStudentSummary: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          full_name: { type: 'string' },
+          department: { type: 'string', nullable: true },
+          graduation_year: { type: 'integer', nullable: true },
+          avatar_url: { type: 'string', nullable: true }
+        }
+      },
+      InboundSwipe: {
+        type: 'object',
+        properties: {
+          swipe: { $ref: '#/components/schemas/Swipe' },
+          student: { $ref: '#/components/schemas/SwipeStudentSummary' },
+          job: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              title: { type: 'string' },
+              status: { type: 'string' }
+            }
+          }
+        }
+      },
+      SwipeUndoResult: {
+        type: 'object',
+        properties: {
+          deleted: { type: 'boolean', example: true }
+        }
+      },
+      Match: {
+        type: 'object',
+        description: 'Nested job + counterparty cards appear on GET /matches/me',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          student_id: { type: 'string', format: 'uuid' },
+          company_id: { type: 'string', format: 'uuid' },
+          job_id: { type: 'string', format: 'uuid' },
+          matched_at: { type: 'string', format: 'date-time' },
+          job: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              title: { type: 'string' },
+              status: { type: 'string' }
+            }
+          },
+          student: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              full_name: { type: 'string' },
+              avatar_url: { type: 'string', nullable: true }
+            }
+          },
+          company: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', format: 'uuid' },
+              company_name: { type: 'string' },
+              logo_url: { type: 'string', nullable: true }
+            }
+          }
+        }
+      },
+      CreateMatch: {
+        type: 'object',
+        required: ['job_id', 'student_id'],
+        description: 'Requires an existing student right-swipe on a job owned by the caller. Idempotent.',
+        properties: {
+          job_id: { type: 'string', format: 'uuid' },
+          student_id: { type: 'string', format: 'uuid' }
         }
       }
     }
@@ -1239,6 +1334,205 @@ const swaggerDefinition = {
                       type: 'object',
                       properties: {
                         data: { $ref: '#/components/schemas/SavedToggle' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    '/swipes': {
+      post: {
+        tags: ['Swipes'],
+        summary: 'Record a left/right swipe on an open job (student)',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/CreateSwipe' }
+            }
+          }
+        },
+        responses: {
+          '201': {
+            description: 'Swipe recorded',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/Swipe' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '404': { description: 'JOB_NOT_FOUND' },
+          '409': { description: 'SWIPE_CONFLICT or SWIPE_JOB_NOT_OPEN' }
+        }
+      }
+    },
+    '/swipes/me': {
+      get: {
+        tags: ['Swipes'],
+        summary: 'List my swipes (student; optional history)',
+        description: 'Optional debug/history endpoint. May return 501 until product needs it.',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Swipe history',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: {
+                          type: 'array',
+                          items: { $ref: '#/components/schemas/Swipe' }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '501': { description: 'NOT_IMPLEMENTED' }
+        }
+      }
+    },
+    '/swipes/inbound': {
+      get: {
+        tags: ['Swipes'],
+        summary: 'List inbound right-swipes on my jobs (verified company)',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Inbound interest cards',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: {
+                          type: 'array',
+                          items: { $ref: '#/components/schemas/InboundSwipe' }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '403': { description: 'PENDING_VERIFICATION or INSUFFICIENT_ROLE' }
+        }
+      }
+    },
+    '/swipes/{jobId}': {
+      delete: {
+        tags: ['Swipes'],
+        summary: 'Undo a swipe within the undo window (student)',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: 'jobId', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } }
+        ],
+        responses: {
+          '200': {
+            description: 'Swipe deleted',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/SwipeUndoResult' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '404': { description: 'SWIPE_NOT_FOUND' },
+          '409': { description: 'SWIPE_UNDO_EXPIRED or MATCH_CONFLICT' }
+        }
+      }
+    },
+    '/matches': {
+      post: {
+        tags: ['Matches'],
+        summary: 'Create a match after a student right-swipe (verified company)',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/CreateMatch' }
+            }
+          }
+        },
+        responses: {
+          '201': {
+            description: 'Match created or existing match returned (idempotent)',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: { $ref: '#/components/schemas/Match' }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          '403': { description: 'MATCH_FORBIDDEN (foreign job or no right-swipe)' },
+          '404': { description: 'JOB_NOT_FOUND' }
+        }
+      }
+    },
+    '/matches/me': {
+      get: {
+        tags: ['Matches'],
+        summary: 'List my matches with nested job + counterparty (student or company)',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Matches for the authenticated role',
+            content: {
+              'application/json': {
+                schema: {
+                  allOf: [
+                    { $ref: '#/components/schemas/SuccessEnvelope' },
+                    {
+                      type: 'object',
+                      properties: {
+                        data: {
+                          type: 'array',
+                          items: { $ref: '#/components/schemas/Match' }
+                        }
                       }
                     }
                   ]
