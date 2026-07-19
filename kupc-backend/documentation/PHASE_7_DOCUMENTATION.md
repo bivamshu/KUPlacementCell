@@ -1,6 +1,6 @@
 # KUPC Phase 7 — Swipe Engine
 
-**Status:** B1–B2 complete; B3–B6 / F1–F5 pending  
+**Status:** B1–B3 complete; B4–B6 / F1–F5 pending  
 **Date:** 2026-07-18  
 **Depends on:** Phase 2 (Auth), Phase 3B (`swipes` / `matches` repos), Phase 6 (open jobs feed + Discover UI)  
 **References:** `KUPC_Phase7_Specification.pdf`  
@@ -10,7 +10,7 @@
 | --- | --- | --- | --- |
 | B1 | Backend | Swipes/matches module scaffold & contracts | **Complete** |
 | B2 | Backend | Record swipe + feed exclusion | **Complete** |
-| B3 | Backend | Undo window (optional) | Pending |
+| B3 | Backend | Undo window (optional) | **Complete** |
 | B4 | Backend | Company interest + match create | Pending |
 | B5 | Backend | Matches read APIs | Pending |
 | B6 | Backend | Swagger, hardening & test matrix | Pending |
@@ -185,4 +185,67 @@ Still stubbed: `GET /swipes/me`, `DELETE /swipes/:jobId`, `GET /swipes/inbound`,
 | Duplicate blocked | `409 SWIPE_CONFLICT` |
 | Tests | `phase7.swipes` + `npm run test:phase7` green |
 
-**What comes next:** Milestone B3 (optional undo) or B4 (company inbound + match create).
+**What comes next:** Milestone B3 — optional undo within a short TTL.
+
+---
+
+# Milestone B3 — Undo Window
+
+**Status:** Complete  
+**Depends on:** B2 swipe persistence, `swipesRepository`, `matchesRepository`  
+**Does not include:** Inbound list / match create (B4), match list (B5), Discover Undo UI (F2)
+
+## What it is
+
+Students can `DELETE /swipes/:jobId` to reverse a swipe **within** `SWIPE_UNDO_WINDOW_SECONDS` (30s). After a successful undo the job can reappear on `GET /jobs` because feed exclusion reads live `swipes` rows. Outside the window → `409 SWIPE_UNDO_EXPIRED`. If a match already exists for that student/job/company → refuse with `409 MATCH_CONFLICT` (no cascade delete).
+
+## Why it happens now
+
+Discover needs a short “oops” path after Like/Nope without reopening permanent history edits. Hard-delete keeps Phase 3B schema simple; refusing undo after match avoids orphaning chat/match state later.
+
+## What was decided / locked
+
+| Rule | Behavior |
+| --- | --- |
+| Window | `Date.now() - swiped_at > 30s` → `409 SWIPE_UNDO_EXPIRED` |
+| Missing swipe | `404 SWIPE_NOT_FOUND` |
+| Match exists | `matchesRepository.findByTriple` hit → `409 MATCH_CONFLICT` (refuse) |
+| Delete style | Hard delete via `deleteByStudentAndJob` |
+| Auth | Student only (route already gated in B1) |
+
+## Endpoints (live)
+
+| Method | Path | Success |
+| --- | --- | --- |
+| `DELETE` | `/swipes/:jobId` | `200` `{ deleted: true }` |
+
+Still stubbed: `GET /swipes/me`, `GET /swipes/inbound`, match routes (`501`).
+
+## Implementation steps (what was done)
+
+1. Added `swipesRepository.deleteByStudentAndJob`.
+2. Implemented `swipesService.undo` — find swipe → refuse if match → enforce TTL → delete.
+3. Dropped scaffold `DELETE → 501` expectation; extended `phase7.swipes.test.ts` with B3 cases.
+
+## Files touched
+
+| Path | Change |
+| --- | --- |
+| `src/database/swipes.repository.ts` | `deleteByStudentAndJob` |
+| `src/modules/swipes/swipes.service.ts` | Live `undo` |
+| `src/modules/swipes/swipes.constants.ts` | Undo window comment |
+| `src/__tests__/phase7.swipes.test.ts` | B3 undo suite |
+| `src/__tests__/phase7.scaffold.test.ts` | Removed DELETE stub |
+| `documentation/PHASE_7_DOCUMENTATION.md` | B3 section |
+
+## Milestone B3 exit checklist
+
+| Item | Done when |
+| --- | --- |
+| Undo works | Within TTL → 200; swipe row deleted |
+| Expired blocked | Outside TTL → `409 SWIPE_UNDO_EXPIRED` |
+| Match refuse | Existing match → `409 MATCH_CONFLICT` |
+| Missing | No swipe → `404 SWIPE_NOT_FOUND` |
+| Tests | `phase7.swipes` B3 cases + `npm run test:phase7` green |
+
+**What comes next:** Milestone B4 — company inbound interest + match create.

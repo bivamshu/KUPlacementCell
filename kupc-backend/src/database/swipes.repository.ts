@@ -51,6 +51,18 @@ export const swipesRepository = {
     return data;
   },
 
+  async deleteByStudentAndJob(studentId: string, jobId: string): Promise<void> {
+    const { error } = await supabaseAdmin
+      .from('swipes')
+      .delete()
+      .eq('student_id', studentId)
+      .eq('job_id', jobId);
+
+    if (error) {
+      throw error;
+    }
+  },
+
   async listJobIdsByStudent(studentId: string): Promise<string[]> {
     const { data, error } = await supabaseAdmin.from('swipes').select('job_id').eq('student_id', studentId);
 

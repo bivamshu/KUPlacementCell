@@ -1,7 +1,7 @@
 export const SWIPE_DIRECTIONS = ['left', 'right'] as const;
 export type SwipeDirection = (typeof SWIPE_DIRECTIONS)[number];
 
-/** Default undo window in seconds (B3). Scaffold only — not enforced until B3. */
+/** Undo window in seconds for `DELETE /swipes/:jobId` (Phase 7 B3). */
 export const SWIPE_UNDO_WINDOW_SECONDS = 30;
 
 export const SWIPE_ERROR_CODES = {

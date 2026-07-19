@@ -221,14 +221,6 @@ describe('Phase 7 Milestone B1 - swipes/matches module scaffold', () => {
     expect(res.body?.error?.code).toBe(SWIPE_ERROR_CODES.NOT_IMPLEMENTED);
   });
 
-  it('DELETE /swipes/:jobId as STUDENT -> 501 NOT_IMPLEMENTED', async () => {
-    const res = await request(app)
-      .delete(`/api/v1/swipes/${jobId}`)
-      .set('x-test-role', Role.STUDENT);
-    expect(res.status).toBe(501);
-    expect(res.body?.error?.code).toBe(SWIPE_ERROR_CODES.NOT_IMPLEMENTED);
-  });
-
   it('POST /matches as STUDENT -> 403 INSUFFICIENT_ROLE', async () => {
     const res = await request(app)
       .post('/api/v1/matches')

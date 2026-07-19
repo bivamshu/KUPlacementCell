@@ -50,18 +50,27 @@ jest.mock('../database/swipes.repository', () => ({
   swipesRepository: {
     create: jest.fn(),
     findByStudentAndJob: jest.fn(),
-    listJobIdsByStudent: jest.fn()
+    listJobIdsByStudent: jest.fn(),
+    deleteByStudentAndJob: jest.fn()
+  }
+}));
+
+jest.mock('../database/matches.repository', () => ({
+  matchesRepository: {
+    findByTriple: jest.fn()
   }
 }));
 
 import app from '../app';
 import { companiesRepository } from '../database/companies.repository';
 import { jobsRepository } from '../database/jobs.repository';
+import { matchesRepository } from '../database/matches.repository';
 import { savedJobsRepository } from '../database/savedJobs.repository';
 import { swipesRepository } from '../database/swipes.repository';
 import { AUTH_ERROR_CODES, Role } from '../modules/auth';
 import { JOB_ERROR_CODES } from '../modules/jobs';
-import { SWIPE_ERROR_CODES } from '../modules/swipes';
+import { MATCH_ERROR_CODES } from '../modules/matches';
+import { SWIPE_ERROR_CODES, SWIPE_UNDO_WINDOW_SECONDS } from '../modules/swipes';
 
 const studentId = '550e8400-e29b-41d4-a716-446655440010';
 const companyId = '550e8400-e29b-41d4-a716-446655440002';
@@ -222,5 +231,78 @@ describe('Phase 7 Milestone B2 - record swipe + feed exclusion', () => {
     expect(jobsRepository.listOpenFiltered).toHaveBeenCalledWith(
       expect.objectContaining({ excludeJobIds: [] })
     );
+  });
+});
+
+describe('Phase 7 Milestone B3 - undo window', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (matchesRepository.findByTriple as jest.Mock).mockResolvedValue(null);
+    (swipesRepository.deleteByStudentAndJob as jest.Mock).mockResolvedValue(undefined);
+  });
+
+  it('DELETE /swipes/:jobId within window -> 200 deleted', async () => {
+    (swipesRepository.findByStudentAndJob as jest.Mock).mockResolvedValue({
+      ...swipeRow,
+      swiped_at: new Date(Date.now() - 5_000).toISOString()
+    });
+
+    const res = await request(app)
+      .delete(`/api/v1/swipes/${jobId}`)
+      .set('x-test-role', Role.STUDENT);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ deleted: true });
+    expect(swipesRepository.deleteByStudentAndJob).toHaveBeenCalledWith(studentId, jobId);
+    expect(matchesRepository.findByTriple).toHaveBeenCalledWith(studentId, companyId, jobId);
+  });
+
+  it('DELETE /swipes/:jobId outside window -> 409 SWIPE_UNDO_EXPIRED', async () => {
+    (swipesRepository.findByStudentAndJob as jest.Mock).mockResolvedValue({
+      ...swipeRow,
+      swiped_at: new Date(Date.now() - (SWIPE_UNDO_WINDOW_SECONDS + 5) * 1000).toISOString()
+    });
+
+    const res = await request(app)
+      .delete(`/api/v1/swipes/${jobId}`)
+      .set('x-test-role', Role.STUDENT);
+
+    expect(res.status).toBe(409);
+    expect(res.body?.error?.code).toBe(SWIPE_ERROR_CODES.SWIPE_UNDO_EXPIRED);
+    expect(swipesRepository.deleteByStudentAndJob).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /swipes/:jobId missing swipe -> 404 SWIPE_NOT_FOUND', async () => {
+    (swipesRepository.findByStudentAndJob as jest.Mock).mockResolvedValue(null);
+
+    const res = await request(app)
+      .delete(`/api/v1/swipes/${jobId}`)
+      .set('x-test-role', Role.STUDENT);
+
+    expect(res.status).toBe(404);
+    expect(res.body?.error?.code).toBe(SWIPE_ERROR_CODES.SWIPE_NOT_FOUND);
+    expect(swipesRepository.deleteByStudentAndJob).not.toHaveBeenCalled();
+  });
+
+  it('DELETE /swipes/:jobId when match exists -> 409 MATCH_CONFLICT', async () => {
+    (swipesRepository.findByStudentAndJob as jest.Mock).mockResolvedValue({
+      ...swipeRow,
+      swiped_at: new Date(Date.now() - 5_000).toISOString()
+    });
+    (matchesRepository.findByTriple as jest.Mock).mockResolvedValue({
+      id: '550e8400-e29b-41d4-a716-446655440088',
+      student_id: studentId,
+      company_id: companyId,
+      job_id: jobId,
+      matched_at: new Date().toISOString()
+    });
+
+    const res = await request(app)
+      .delete(`/api/v1/swipes/${jobId}`)
+      .set('x-test-role', Role.STUDENT);
+
+    expect(res.status).toBe(409);
+    expect(res.body?.error?.code).toBe(MATCH_ERROR_CODES.MATCH_CONFLICT);
+    expect(swipesRepository.deleteByStudentAndJob).not.toHaveBeenCalled();
   });
 });
