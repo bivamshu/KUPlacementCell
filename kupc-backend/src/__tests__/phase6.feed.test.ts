@@ -46,10 +46,17 @@ jest.mock('../database/savedJobs.repository', () => ({
   }
 }));
 
+jest.mock('../database/swipes.repository', () => ({
+  swipesRepository: {
+    listJobIdsByStudent: jest.fn()
+  }
+}));
+
 import app from '../app';
 import { companiesRepository } from '../database/companies.repository';
 import { jobsRepository } from '../database/jobs.repository';
 import { savedJobsRepository } from '../database/savedJobs.repository';
+import { swipesRepository } from '../database/swipes.repository';
 import { AUTH_ERROR_CODES, Role } from '../modules/auth';
 import { JOB_ERROR_CODES } from '../modules/jobs';
 
@@ -132,6 +139,7 @@ describe('Phase 6 Milestone B3 - student discovery feed', () => {
     jest.clearAllMocks();
     (savedJobsRepository.listByStudent as jest.Mock).mockResolvedValue([]);
     (savedJobsRepository.exists as jest.Mock).mockResolvedValue(false);
+    (swipesRepository.listJobIdsByStudent as jest.Mock).mockResolvedValue([]);
   });
 
   it('GET /jobs without token -> 401', async () => {
@@ -165,6 +173,7 @@ describe('Phase 6 Milestone B3 - student discovery feed', () => {
       jobType: undefined,
       location: undefined,
       minCgpa: undefined,
+      excludeJobIds: [],
       limit: 20,
       offset: 0
     });
@@ -185,6 +194,7 @@ describe('Phase 6 Milestone B3 - student discovery feed', () => {
       jobType: 'internship',
       location: 'Dhulikhel',
       minCgpa: 3.2,
+      excludeJobIds: [],
       limit: 10,
       offset: 5
     });

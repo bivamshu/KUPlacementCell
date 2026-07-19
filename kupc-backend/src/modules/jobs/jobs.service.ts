@@ -2,6 +2,7 @@ import { companiesRepository } from '../../database/companies.repository';
 import type { JobRecord } from '../../database/jobs.repository';
 import { jobsRepository } from '../../database/jobs.repository';
 import { savedJobsRepository } from '../../database/savedJobs.repository';
+import { swipesRepository } from '../../database/swipes.repository';
 import { companyNotFoundError } from '../companies/companies.errors';
 import { Role } from '../auth';
 import {
@@ -131,12 +132,16 @@ export const jobsService = {
   },
 
   async listFeed(viewer: JobViewer, query: JobListQuery): Promise<JobFeedCardDto[]> {
+    const excludeJobIds =
+      viewer.role === Role.STUDENT ? await swipesRepository.listJobIdsByStudent(viewer.id) : [];
+
     const jobs = await jobsRepository.listOpenFiltered({
       q: query.q,
       jobType: query.job_type,
       location: query.location,
       // Express query values may remain strings even after Zod coerce + Object.assign.
       minCgpa: query.min_cgpa !== undefined ? Number(query.min_cgpa) : undefined,
+      excludeJobIds,
       limit: Number(query.limit),
       offset: Number(query.offset)
     });

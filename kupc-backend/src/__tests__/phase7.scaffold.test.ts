@@ -28,12 +28,29 @@ jest.mock('../config/env', () => ({
 
 jest.mock('../database/companies.repository', () => ({
   companiesRepository: {
-    findByUserId: jest.fn()
+    findByUserId: jest.fn(),
+    findById: jest.fn()
+  }
+}));
+
+jest.mock('../database/jobs.repository', () => ({
+  jobsRepository: {
+    findById: jest.fn()
+  }
+}));
+
+jest.mock('../database/swipes.repository', () => ({
+  swipesRepository: {
+    create: jest.fn(),
+    findByStudentAndJob: jest.fn(),
+    listJobIdsByStudent: jest.fn()
   }
 }));
 
 import app from '../app';
 import { companiesRepository } from '../database/companies.repository';
+import { jobsRepository } from '../database/jobs.repository';
+import { swipesRepository } from '../database/swipes.repository';
 import { AUTH_ERROR_CODES, Role } from '../modules/auth';
 import { MATCH_ERROR_CODES } from '../modules/matches';
 import { SWIPE_ERROR_CODES } from '../modules/swipes';
@@ -133,13 +150,47 @@ describe('Phase 7 Milestone B1 - swipes/matches module scaffold', () => {
     expect(res.body?.error?.code).toBe('VALIDATION_ERROR');
   });
 
-  it('POST /swipes as STUDENT with valid body -> 501 NOT_IMPLEMENTED', async () => {
+  it('POST /swipes as STUDENT with valid body -> 201 SwipeDto', async () => {
+    (jobsRepository.findById as jest.Mock).mockResolvedValue({
+      id: jobId,
+      company_id: '550e8400-e29b-41d4-a716-446655440002',
+      title: 'Backend Intern',
+      description: 'Ship APIs for the placement cell with mentorship.',
+      location: 'Dhulikhel',
+      job_type: 'internship',
+      min_cgpa: 3.0,
+      status: 'open',
+      created_at: '2026-07-17T10:00:00.000Z',
+      updated_at: '2026-07-17T11:00:00.000Z'
+    });
+    (companiesRepository.findById as jest.Mock).mockResolvedValue({
+      id: '550e8400-e29b-41d4-a716-446655440002',
+      verification_status: 'approved',
+      company_name: 'Co',
+      website: null,
+      verified_at: null,
+      industry: null,
+      description: null,
+      logo_url: null,
+      created_at: '2026-07-01T00:00:00.000Z',
+      updated_at: '2026-07-01T00:00:00.000Z'
+    });
+    (swipesRepository.findByStudentAndJob as jest.Mock).mockResolvedValue(null);
+    (swipesRepository.create as jest.Mock).mockResolvedValue({
+      id: '550e8400-e29b-41d4-a716-446655440099',
+      student_id: '550e8400-e29b-41d4-a716-446655440099',
+      company_id: '550e8400-e29b-41d4-a716-446655440002',
+      job_id: jobId,
+      direction: 'right',
+      swiped_at: '2026-07-18T12:00:00.000Z'
+    });
+
     const res = await request(app)
       .post('/api/v1/swipes')
       .set('x-test-role', Role.STUDENT)
       .send(validSwipeBody);
-    expect(res.status).toBe(501);
-    expect(res.body?.error?.code).toBe(SWIPE_ERROR_CODES.NOT_IMPLEMENTED);
+    expect(res.status).toBe(201);
+    expect(res.body.data.direction).toBe('right');
   });
 
   it('GET /swipes/inbound as pending COMPANY -> 403 PENDING_VERIFICATION', async () => {

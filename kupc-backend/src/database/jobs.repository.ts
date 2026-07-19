@@ -35,13 +35,15 @@ export type UpdateJobInput = {
   status?: JobStatus;
 };
 
-/** Filters for the student open-job feed (Phase 6 B3). */
+/** Filters for the student open-job feed (Phase 6 B3 + Phase 7 B2). */
 export type ListOpenFilteredInput = {
   q?: string;
   jobType?: JobType;
   location?: string;
   /** When set, return jobs the viewer can meet: min_cgpa IS NULL OR min_cgpa <= value. */
   minCgpa?: number;
+  /** Job IDs to omit (e.g. already swiped by the student). */
+  excludeJobIds?: string[];
   limit: number;
   offset: number;
 };
@@ -154,6 +156,13 @@ export const jobsRepository = {
 
     if (input.minCgpa !== undefined && Number.isFinite(input.minCgpa)) {
       query = query.or(`min_cgpa.is.null,min_cgpa.lte.${input.minCgpa}`);
+    }
+
+    if (input.excludeJobIds && input.excludeJobIds.length > 0) {
+      const unique = [...new Set(input.excludeJobIds.filter(Boolean))];
+      if (unique.length > 0) {
+        query = query.not('id', 'in', `(${unique.join(',')})`);
+      }
     }
 
     const from = offset;

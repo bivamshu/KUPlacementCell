@@ -1,6 +1,6 @@
 # KUPC Phase 7 — Swipe Engine
 
-**Status:** B1 complete; B2–B6 / F1–F5 pending  
+**Status:** B1–B2 complete; B3–B6 / F1–F5 pending  
 **Date:** 2026-07-18  
 **Depends on:** Phase 2 (Auth), Phase 3B (`swipes` / `matches` repos), Phase 6 (open jobs feed + Discover UI)  
 **References:** `KUPC_Phase7_Specification.pdf`  
@@ -9,7 +9,7 @@
 | Milestone | Side | Topic | Status |
 | --- | --- | --- | --- |
 | B1 | Backend | Swipes/matches module scaffold & contracts | **Complete** |
-| B2 | Backend | Record swipe + feed exclusion | Pending |
+| B2 | Backend | Record swipe + feed exclusion | **Complete** |
 | B3 | Backend | Undo window (optional) | Pending |
 | B4 | Backend | Company interest + match create | Pending |
 | B5 | Backend | Matches read APIs | Pending |
@@ -116,7 +116,73 @@ Without shared DTOs and route order (`/me`, `/inbound` before `/:jobId`), Discov
 | Auth gates | No token → 401; company POST `/swipes` → 403; pending inbound → 403 |
 | Validation | Empty swipe/match body → 400 `VALIDATION_ERROR` |
 | Contracts typed | DTOs / Zod match Phase 7 spec §4 |
-| Stub behavior | Valid student swipe / approved match → 501 `NOT_IMPLEMENTED` |
+| Stub behavior | Valid student swipe / approved match → 501 `NOT_IMPLEMENTED` (until B2+) |
 | Tests | `npm run test:phase7` green |
 
 **What comes next:** Milestone B2 — implement `createSwipe` + exclude swiped job IDs from student `GET /jobs` feed.
+
+---
+
+# Milestone B2 — Record Swipe + Feed Exclusion
+
+**Status:** Complete  
+**Depends on:** B1 routes/auth gates, `swipesRepository`, `jobsRepository`, `companiesRepository`  
+**Does not include:** Undo (B3), inbound list / match create (B4), match list (B5)
+
+## What it is
+
+Students can `POST /swipes` with `{ job_id, direction }` on **open** jobs from **approved** companies. Duplicate swipes return `409 SWIPE_CONFLICT`. Student `GET /jobs` excludes job IDs already present in `swipes` for that student.
+
+## Why it happens now
+
+Without persistence, Discover only advances a local deck — reload reshuffles the same cards. Feed exclusion must use the same `swipes` rows so Like/Nope survive refresh (frontend F2 will call this API).
+
+## What was decided / locked
+
+| Rule | Behavior |
+| --- | --- |
+| Open + approved only | Draft/closed → `409 SWIPE_JOB_NOT_OPEN`; missing job → `404 JOB_NOT_FOUND`; pending/non-approved company → `409 SWIPE_JOB_NOT_OPEN` |
+| Company id | Taken from the job row (not client-supplied) |
+| Duplicate | Pre-check via `findByStudentAndJob` + DB unique → `409 SWIPE_CONFLICT` |
+| Feed exclusion | Students only; company/admin feeds pass `excludeJobIds: []` |
+| Exclude in repo | `listOpenFiltered({ excludeJobIds })` uses PostgREST `not('id', 'in', …)` |
+
+## Endpoints (live)
+
+| Method | Path | Success |
+| --- | --- | --- |
+| `POST` | `/swipes` | `201` SwipeDto |
+| `GET` | `/jobs` (student) | Omits swiped job IDs |
+
+Still stubbed: `GET /swipes/me`, `DELETE /swipes/:jobId`, `GET /swipes/inbound`, match routes (`501`).
+
+## Implementation steps (what was done)
+
+1. Implemented `swipesService.create` — load job, require `status: open`, require approved company, conflict check, `swipesRepository.create`, map via `toSwipeDto`.
+2. Extended `ListOpenFilteredInput` with optional `excludeJobIds`; applied in `jobs.repository.listOpenFiltered`.
+3. Updated `jobsService.listFeed` to call `swipesRepository.listJobIdsByStudent(viewer.id)` when `viewer.role === STUDENT`.
+4. Added `phase7.swipes.test.ts`; updated scaffold (create → 201) and phase6 feed expectations (`excludeJobIds`).
+
+## Files touched
+
+| Path | Change |
+| --- | --- |
+| `src/modules/swipes/swipes.service.ts` | Live `create` |
+| `src/modules/jobs/jobs.service.ts` | Student exclude swiped IDs |
+| `src/database/jobs.repository.ts` | `excludeJobIds` filter |
+| `src/__tests__/phase7.swipes.test.ts` | **Created** |
+| `src/__tests__/phase7.scaffold.test.ts` | Create → 201 |
+| `src/__tests__/phase6.feed.test.ts` | Mock swipes + `excludeJobIds` |
+| `documentation/PHASE_7_DOCUMENTATION.md` | B2 section |
+
+## Milestone B2 exit checklist
+
+| Item | Done when |
+| --- | --- |
+| Swipe persists | `POST /swipes` → 201 SwipeDto |
+| Deck shrinks | Swiped id passed as `excludeJobIds` on student feed |
+| Closed/draft blocked | `409 SWIPE_JOB_NOT_OPEN` |
+| Duplicate blocked | `409 SWIPE_CONFLICT` |
+| Tests | `phase7.swipes` + `npm run test:phase7` green |
+
+**What comes next:** Milestone B3 (optional undo) or B4 (company inbound + match create).
